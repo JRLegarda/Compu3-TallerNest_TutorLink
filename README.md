@@ -4,8 +4,6 @@ Backend del taller de Computación en Internet III (NestJS + PostgreSQL). TutorL
 
 La API escucha en el puerto **9000** con el prefijo global `tutorlink`. Un usuario nuevo entra siempre como `student`. Los roles son `student`, `tutor` y `admin`.
 
-El 2FA de la consigna quedó descartado. No hay que implementarlo.
-
 ## Qué ya está hecho
 
 Persistencia con TypeORM contra PostgreSQL y el módulo de usuarios: registro, login, logout y autorización por roles.
