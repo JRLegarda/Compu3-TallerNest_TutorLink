@@ -18,16 +18,21 @@ import { UserRoleGuard } from './guards/user-role.guard.js';
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (configService: ConfigService) => {
-        return {
-          secret: configService.get("JWT_SECRET"),
-          signOptions: {
-            expiresIn: '1h'
-          }
+        const secret = configService.get<string>('JWT_SECRET');
+        if (!secret) {
+          throw new Error('JWT_SECRET is not set');
         }
-      }
-    })
+
+        return {
+          secret,
+          signOptions: {
+            expiresIn: configService.get('JWT_EXPIRES_IN') ?? '1h',
+          },
+        };
+      },
+    }),
   ],
-  providers: [UserService, ConfigService, JwtStrategy],
+  providers: [UserService, ConfigService, JwtStrategy, UserRoleGuard],
   exports: [TypeOrmModule, PassportModule, JwtModule, JwtStrategy, UserRoleGuard, UserService]
 })
 export class UserModule {}

@@ -1,4 +1,12 @@
-import {BadRequestException,ConflictException,Injectable,InternalServerErrorException,Logger,NotFoundException,UnauthorizedException,} from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
@@ -9,6 +17,7 @@ import { Login } from './dto/login.dto.js';
 import { UpdateRoles } from './dto/update-roles.dto.js';
 import { JwtPayload } from './interfaces/jwt.interface.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
+import { UserRole } from './enums/user-role.enum.js';
 
 @Injectable()
 export class UserService {
@@ -27,15 +36,13 @@ export class UserService {
       const user = this.userRepository.create({
         ...userDetails,
         password: this.encryptPassword(password),
+        roles: [UserRole.STUDENT],
+        tokenVersion: 0,
       });
 
       await this.userRepository.save(user);
-      delete user.password;
 
-      return {
-        ...user,
-        token: this.getJwtToken({ id: user.id, email: user.email }),
-      };
+      return this.authResponse(user);
     } catch (error) {
       this.handleException(error);
     }
@@ -46,19 +53,29 @@ export class UserService {
 
     const user = await this.userRepository.findOne({
       where: { email: email.toLowerCase().trim() },
-      select: { id: true, email: true, password: true, isActive: true },
+      select: {
+        id: true,
+        email: true,
+        password: true,
+        fullName: true,
+        isActive: true,
+        roles: true,
+        tokenVersion: true,
+      },
     });
 
-    if (!user || !bcrypt.compareSync(password, user.password!)) {
+    if (!user?.password || !bcrypt.compareSync(password, user.password)) {
       throw new UnauthorizedException('Email or password incorrect');
     }
     if (!user.isActive) throw new UnauthorizedException('User is not active');
 
-    return {
-      id: user.id,
-      email: user.email,
-      token: this.getJwtToken({ id: user.id, email: user.email }),
-    };
+    return this.authResponse(user);
+  }
+
+  async logout(id: string) {
+    await this.findOne(id);
+    await this.userRepository.increment({ id }, 'tokenVersion', 1);
+    return { message: 'Session closed' };
   }
 
   encryptPassword(password: string) {
@@ -79,23 +96,41 @@ export class UserService {
     return user;
   }
 
-  async updateRoles(id: string, { roles }: UpdateRoles) {
-    const user = await this.findOne(id);
-    user.roles = roles;
-    return this.userRepository.save(user);
+  async updateRoles(id: string, { roles }: UpdateRoles, currentUser: User) {
+    if (id === currentUser.id && !roles.includes(UserRole.ADMIN)) {
+      throw new BadRequestException('You cannot remove your own admin role');
+    }
+
+    await this.findOne(id);
+    await this.userRepository.update(id, { roles });
+    return this.findOne(id);
   }
 
   async deactivate(id: string, currentUser: User) {
     if (id === currentUser.id) {
       throw new BadRequestException('You cannot deactivate yourself');
     }
+
     const user = await this.findOne(id);
-    user.isActive = false;
-    await this.userRepository.save(user);
+    await this.userRepository.update(id, { isActive: false });
+    await this.userRepository.increment({ id }, 'tokenVersion', 1);
     return { message: `User ${user.email} deactivated` };
   }
 
-  
+  private authResponse(user: User) {
+    return {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      isActive: user.isActive,
+      roles: user.roles,
+      token: this.getJwtToken({
+        id: user.id,
+        email: user.email,
+        tokenVersion: user.tokenVersion ?? 0,
+      }),
+    };
+  }
 
   private getJwtToken(jwtPayload: JwtPayload) {
     return this.jwtService.sign(jwtPayload);
@@ -104,6 +139,8 @@ export class UserService {
   private handleException(error: any): never {
     if (error.code === '23505') throw new ConflictException(error.detail);
     this.logger.error(error);
-    throw new InternalServerErrorException('Unexpected error, check server logs');
+    throw new InternalServerErrorException(
+      'Unexpected error, check server logs',
+    );
   }
 }

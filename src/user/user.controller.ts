@@ -31,6 +31,12 @@ export class UserController {
     return user;
   }
 
+  @Post('logout')
+  @Auth()
+  logout(@GetUser() user: User) {
+    return this.userService.logout(user.id);
+  }
+
   // ---------- solo admin ----------
   @Get()
   @Auth(UserRole.ADMIN)
@@ -49,8 +55,9 @@ export class UserController {
   updateRoles(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateRoles: UpdateRoles,
+    @GetUser() admin: User,
   ) {
-    return this.userService.updateRoles(id, updateRoles);
+    return this.userService.updateRoles(id, updateRoles, admin);
   }
 
   @Delete(':id')

@@ -9,9 +9,9 @@ export class UserRoleGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const validRoles = this.reflector.get<UserRole[] | undefined>(
+    const validRoles = this.reflector.getAllAndOverride<UserRole[] | undefined>(
       META_ROLES,
-      context.getHandler(),
+      [context.getHandler(), context.getClass()],
     );
 
     // Sin roles definidos => basta con estar autenticado

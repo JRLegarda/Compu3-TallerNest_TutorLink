@@ -1,114 +1,245 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# TutorLink
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend del taller de Computación en Internet III (NestJS + PostgreSQL). TutorLink es un marketplace de tutorías universitarias: un estudiante busca un tutor por materia, universidad y tarifa, reserva una sesión y, si quiere, deja una reseña cuando la sesión terminó.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+La API escucha en el puerto **9000** con el prefijo global `tutorlink`. Un usuario nuevo entra siempre como `student`. Los roles son `student`, `tutor` y `admin`.
 
-## Description
+El 2FA de la consigna quedó descartado. No hay que implementarlo.
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Qué ya está hecho
 
-## Project setup
+Persistencia con TypeORM contra PostgreSQL y el módulo de usuarios: registro, login, logout y autorización por roles.
 
-```bash
-$ npm install
+| Método | Ruta | Quién |
+|---|---|---|
+| POST | `/tutorlink/user/signup` | Público. Crea un estudiante. |
+| POST | `/tutorlink/user/auth` | Público. Devuelve el JWT. |
+| GET | `/tutorlink/user/me` | Cualquier sesión. |
+| POST | `/tutorlink/user/logout` | Cualquier sesión. Invalida el token. |
+| GET | `/tutorlink/user` | Admin. Acepta `limit` y `skip`. |
+| GET | `/tutorlink/user/:id` | Admin. |
+| PATCH | `/tutorlink/user/:id/roles` | Admin. Body: `{ "roles": ["tutor"] }`. |
+| DELETE | `/tutorlink/user/:id` | Admin. Desactiva la cuenta. No puede desactivarse a sí mismo ni quitarse el rol admin. |
+
+El logout sube `tokenVersion` en el usuario. Ese número viaja dentro del JWT. Si no coincide, o si `isActive` es falso, la ruta protegida responde 401. Las rutas protegidas usan el header `Authorization: Bearer <token>`. El decorador `@Auth()` ya aplica el guard de JWT y, si se le pasan roles, el guard de roles.
+
+## Cómo correrlo
+
+1. Crear un `.env` en la raíz (no se sube a git) con:
+
+```env
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=tutorlink
+DB_USERNAME=postgres
+DB_PASSWORD=tu_password
+JWT_SECRET=un_secreto_sin_signo_pesos
+JWT_EXPIRES_IN=1h
+ADMIN_EMAIL=admin@tutorlink.com
+ADMIN_PASSWORD=tu_password_admin
+ADMIN_FULL_NAME=Administrador TutorLink
+SEED_KEY=una_clave_para_el_seed
 ```
 
-## Compile and run the project
+2. Instalar dependencias y levantar solo la base:
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
+docker compose up -d db
+npm run start:dev
 ```
 
-## Run tests
+`docker compose up -d` (sin `db`) también intenta construir la API dentro de Docker. Hoy esa imagen falla porque `npm ci` del Dockerfile no coincide con el `package-lock.json`. Para desarrollar, Nest se corre en la máquina y Docker solo presta PostgreSQL.
 
-```bash
-# unit tests
-$ npm run test
+PostgreSQL aplica `DB_PASSWORD` únicamente la primera vez que crea el volumen `pgdata`. Si el contenedor ya tenía datos y la contraseña del `.env` cambió, el login a la base sigue fallando. En ese caso hay que recrear el volumen o cambiar la contraseña del usuario dentro del contenedor.
 
-# e2e tests
-$ npm run test:e2e
+`synchronize: true` en `app.module.ts` crea y altera tablas al arrancar. Sirve en desarrollo. No se deja así en producción.
 
-# test coverage
-$ npm run test:cov
+## Qué falta
+
+La entrega del taller es el **13 de octubre de 2026**. Abajo está el trabajo que todavía no está en el repo. Cada módulo nuevo se importa en `app.module.ts` y reutiliza `@Auth()` del módulo `user`.
+
+### Materias (`subject`)
+
+CRUD solo para admin. La lectura es para cualquier usuario autenticado.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| POST | `/tutorlink/subject` | Admin |
+| GET | `/tutorlink/subject` | Autenticado |
+| GET | `/tutorlink/subject/:id` | Autenticado |
+| PATCH | `/tutorlink/subject/:id` | Admin |
+| DELETE | `/tutorlink/subject/:id` | Admin |
+
+`GET /tutorlink/subject` filtra con `university`, `semester`, `search`, `limit` y `skip`. `limit` y `skip` ya existen en `src/common/dto/pagination.dto.ts`.
+
+### Tutores (`tutor`)
+
+El perfil no es el usuario: es una entidad aparte (`tutor_profile`) ligada al usuario con rol `tutor`.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| PUT | `/tutorlink/tutor/me` | Tutor. Arma su perfil: bio, tarifa, historial y materias. |
+| GET | `/tutorlink/tutor` | Autenticado. Filtros: materia, universidad, tarifa máxima y verificado. |
+| GET | `/tutorlink/tutor/:id` | Autenticado |
+| PATCH | `/tutorlink/tutor/:id/verify` | Admin |
+
+El admin asigna el rol `tutor` con `PATCH /tutorlink/user/:id/roles` antes de que esa persona pueda crear su perfil.
+
+### Reservas (`booking`)
+
+Estados: `PENDING`, `CONFIRMED`, `CANCELLED`, `COMPLETED`.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| POST | `/tutorlink/booking` | Student |
+| GET | `/tutorlink/booking/mine` | El estudiante o el tutor de esa reserva |
+| PATCH | `/tutorlink/booking/:id/confirm` | El tutor dueño |
+| PATCH | `/tutorlink/booking/:id/cancel` | El dueño de la reserva |
+| PATCH | `/tutorlink/booking/:id/complete` | El tutor dueño |
+
+Reglas:
+
+- El tutor tiene que dictar la materia reservada.
+- No puede haber cruce de horario con otra reserva activa de ese tutor.
+- Solo el dueño de la reserva la modifica.
+
+### Reseñas (`review`, opcional)
+
+Solo se puede reseñar una reserva `COMPLETED` propia. Una reseña por reserva.
+
+### Seed
+
+Endpoint o script que cargue datos iniciales y permita repetir la carga.
+
+- El admin sale de `ADMIN_EMAIL`, `ADMIN_PASSWORD` y `ADMIN_FULL_NAME`. Proteger la ruta con `SEED_KEY`.
+- Cargar algunas materias, 2 tutores y 2 estudiantes.
+- Borrar en este orden, por las llaves foráneas: `booking`, `tutor_profile`, `subject`, `user`.
+- Hashear contraseñas con `UserService.encryptPassword`, el mismo método del registro.
+
+### Swagger
+
+En `main.ts`:
+
+- `DocumentBuilder().addBearerAuth()`
+- `SwaggerModule.setup('docs', ...)` para servir la documentación en `/docs`
+
+En el código:
+
+- `@ApiTags` en cada controller.
+- `@ApiProperty` en los DTO.
+- `@ApiBearerAuth()` dentro del decorador `@Auth()`, para no marcarlo ruta por ruta.
+
+### Postman
+
+Colección JSON en el repo, con variables `baseUrl` (`http://localhost:9000/tutorlink`) y `token`. Tiene que poder ejecutarse a mano cada flujo: usuarios, materias, tutores, reservas y, si se hace, reseñas.
+
+### Pruebas
+
+Quedan para otro momento del proyecto. La consigna pide pruebas unitarias y de integración (Vitest y Supertest ya están en el repo) con al menos **80%** de cobertura. `test/app.e2e-spec.ts` es el esqueleto de Nest y todavía no prueba TutorLink.
+
+### GitHub Actions y despliegue
+
+- Un workflow que ejecute las pruebas antes del push.
+- Desplegar la API en un servicio en la nube.
+- Un pipeline que pruebe y despliegue.
+- En el informe de la entrega: URL del repositorio, URL de la app y cómo se probaron los endpoints.
+
+### Informe
+
+Documento para la tarea de Intu. Describe cada endpoint (parámetros y respuestas) y explica autenticación, autorización y persistencia. No reemplaza este README.
+
+## Estructura de carpetas
+
+No se listan `node_modules/`, `dist/` ni `.git/`. `.env` existe en local y está en `.gitignore`.
+
+```text
+Compu3-TallerNest_TutorLink/
+├── src/
+│   ├── main.ts
+│   ├── app.module.ts
+│   ├── common/
+│   │   └── dto/
+│   │       └── pagination.dto.ts
+│   └── user/
+│       ├── user.module.ts
+│       ├── user.controller.ts
+│       ├── user.service.ts
+│       ├── decorators/
+│       │   ├── auth.decorator.ts
+│       │   ├── get-user.decorator.ts
+│       │   └── role-protected.decorator.ts
+│       ├── dto/
+│       │   ├── login.dto.ts
+│       │   ├── register.dto.ts
+│       │   └── update-roles.dto.ts
+│       ├── entities/
+│       │   └── user.entity.ts
+│       ├── enums/
+│       │   └── user-role.enum.ts
+│       ├── guards/
+│       │   └── user-role.guard.ts
+│       ├── interfaces/
+│       │   └── jwt.interface.ts
+│       └── strategies/
+│           └── jwt.strategy.ts
+├── test/
+│   └── app.e2e-spec.ts
+├── .dockerignore
+├── .gitignore
+├── .prettierrc
+├── docker-compose.yml
+├── Dockerfile
+├── nest-cli.json
+├── oxlint.json
+├── package.json
+├── package-lock.json
+├── tsconfig.json
+├── tsconfig.build.json
+├── tsconfig.build.tsbuildinfo
+├── vitest.config.ts
+└── vitest.config.e2e.ts
 ```
 
-## Deployment
+Al implementar lo que falta, el árbol de `src/` queda así. Estas carpetas todavía no existen:
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+```text
+src/
+├── subject/
+│   ├── subject.module.ts
+│   ├── subject.controller.ts
+│   ├── subject.service.ts
+│   ├── dto/
+│   └── entities/
+│       └── subject.entity.ts
+├── tutor/
+│   ├── tutor.module.ts
+│   ├── tutor.controller.ts
+│   ├── tutor.service.ts
+│   ├── dto/
+│   └── entities/
+│       └── tutor-profile.entity.ts
+├── booking/
+│   ├── booking.module.ts
+│   ├── booking.controller.ts
+│   ├── booking.service.ts
+│   ├── dto/
+│   ├── entities/
+│   │   └── booking.entity.ts
+│   └── enums/
+│       └── booking-status.enum.ts
+├── review/                          # opcional
+│   ├── review.module.ts
+│   ├── review.controller.ts
+│   ├── review.service.ts
+│   ├── dto/
+│   └── entities/
+│       └── review.entity.ts
+└── seed/
+    ├── seed.module.ts
+    ├── seed.controller.ts
+    ├── seed.service.ts
+    └── data/
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observer](https://observer.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+La colección de Postman va en `postman/`. El workflow de GitHub Actions va en `.github/workflows/`.

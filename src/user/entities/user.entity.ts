@@ -19,6 +19,10 @@ export class User {
   @Column('bool', { default: true })
   isActive: boolean;
 
+  // Sube en cada logout. El JWT lleva este número; si no coincide, la sesión murió.
+  @Column({ type: 'int', default: 0, select: false })
+  tokenVersion?: number;
+
   // default: todo usuario nuevo es estudiante
   @Column({ type: 'text', array: true, default: [UserRole.STUDENT] })
   roles: UserRole[];
