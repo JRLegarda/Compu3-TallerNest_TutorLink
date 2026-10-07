@@ -21,6 +21,18 @@ Persistencia con TypeORM contra PostgreSQL y el módulo de usuarios: registro, l
 
 El logout sube `tokenVersion` en el usuario. Ese número viaja dentro del JWT. Si no coincide, o si `isActive` es falso, la ruta protegida responde 401. Las rutas protegidas usan el header `Authorization: Bearer <token>`. El decorador `@Auth()` ya aplica el guard de JWT y, si se le pasan roles, el guard de roles.
 
+También está el módulo de materias. No depende de tutores, reservas ni reseñas. Crear, editar y borrar es solo admin. Listar y ver una materia exige estar autenticado.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| POST | `/tutorlink/subject` | Admin. Body: `name`, `university`, `semester`. |
+| GET | `/tutorlink/subject` | Autenticado. Filtros: `university`, `semester`, `search`, `limit`, `skip`. |
+| GET | `/tutorlink/subject/:id` | Autenticado. |
+| PATCH | `/tutorlink/subject/:id` | Admin. |
+| DELETE | `/tutorlink/subject/:id` | Admin. |
+
+No puede repetirse la misma materia en la misma universidad y el mismo semestre. `search` busca por nombre, sin importar mayúsculas.
+
 ## Cómo correrlo
 
 1. Crear un `.env` en la raíz (no se sube a git) con:
@@ -55,21 +67,9 @@ PostgreSQL aplica `DB_PASSWORD` únicamente la primera vez que crea el volumen `
 
 ## Qué falta
 
-La entrega del taller es el **13 de octubre de 2026**. Abajo está el trabajo que todavía no está en el repo. Cada módulo nuevo se importa en `app.module.ts` y reutiliza `@Auth()` del módulo `user`.
+La entrega del taller es el **13 de octubre de 2026**. Abajo está lo que todavía falta implementar. Los módulos nuevos ya están importados en `app.module.ts` y deben reutilizar `@Auth()` del módulo `user`.
 
-### Materias (`subject`)
-
-CRUD solo para admin. La lectura es para cualquier usuario autenticado.
-
-| Método | Ruta | Quién |
-|---|---|---|
-| POST | `/tutorlink/subject` | Admin |
-| GET | `/tutorlink/subject` | Autenticado |
-| GET | `/tutorlink/subject/:id` | Autenticado |
-| PATCH | `/tutorlink/subject/:id` | Admin |
-| DELETE | `/tutorlink/subject/:id` | Admin |
-
-`GET /tutorlink/subject` filtra con `university`, `semester`, `search`, `limit` y `skip`. `limit` y `skip` ya existen en `src/common/dto/pagination.dto.ts`.
+`tutor`, `booking` y `review` ya tienen módulo, controller y service de Nest, más las carpetas `dto/` y `entities/`. Todavía no tienen lógica. `booking` ya define el enum `BookingStatus`.
 
 ### Tutores (`tutor`)
 
@@ -159,28 +159,66 @@ Compu3-TallerNest_TutorLink/
 │   ├── common/
 │   │   └── dto/
 │   │       └── pagination.dto.ts
-│   └── user/
-│       ├── user.module.ts
-│       ├── user.controller.ts
-│       ├── user.service.ts
-│       ├── decorators/
-│       │   ├── auth.decorator.ts
-│       │   ├── get-user.decorator.ts
-│       │   └── role-protected.decorator.ts
+│   ├── user/
+│   │   ├── user.module.ts
+│   │   ├── user.controller.ts
+│   │   ├── user.service.ts
+│   │   ├── decorators/
+│   │   │   ├── auth.decorator.ts
+│   │   │   ├── get-user.decorator.ts
+│   │   │   └── role-protected.decorator.ts
+│   │   ├── dto/
+│   │   │   ├── login.dto.ts
+│   │   │   ├── register.dto.ts
+│   │   │   └── update-roles.dto.ts
+│   │   ├── entities/
+│   │   │   └── user.entity.ts
+│   │   ├── enums/
+│   │   │   └── user-role.enum.ts
+│   │   ├── guards/
+│   │   │   └── user-role.guard.ts
+│   │   ├── interfaces/
+│   │   │   └── jwt.interface.ts
+│   │   └── strategies/
+│   │       └── jwt.strategy.ts
+│   ├── subject/
+│   │   ├── subject.module.ts
+│   │   ├── subject.controller.ts
+│   │   ├── subject.service.ts
+│   │   ├── dto/
+│   │   │   ├── create-subject.dto.ts
+│   │   │   ├── update-subject.dto.ts
+│   │   │   └── filter-subject.dto.ts
+│   │   └── entities/
+│   │       └── subject.entity.ts
+│   ├── tutor/
+│   │   ├── tutor.module.ts
+│   │   ├── tutor.controller.ts
+│   │   ├── tutor.service.ts
+│   │   ├── dto/
+│   │   │   ├── create-tutor-profile.ts
+│   │   │   └── update-tutor-profile.ts
+│   │   └── entities/
+│   │       └── tutor-profile.entity.ts
+│   ├── booking/
+│   │   ├── booking.module.ts
+│   │   ├── booking.controller.ts
+│   │   ├── booking.service.ts
+│   │   ├── dto/
+│   │   │   ├── create-booking.ts
+│   │   │   └── update-booking.ts
+│   │   ├── entities/
+│   │   │   └── booking.entity.ts
+│   │   └── enums/
+│   │       └── booking-status.enum.ts
+│   └── review/
+│       ├── review.module.ts
+│       ├── review.controller.ts
+│       ├── review.service.ts
 │       ├── dto/
-│       │   ├── login.dto.ts
-│       │   ├── register.dto.ts
-│       │   └── update-roles.dto.ts
-│       ├── entities/
-│       │   └── user.entity.ts
-│       ├── enums/
-│       │   └── user-role.enum.ts
-│       ├── guards/
-│       │   └── user-role.guard.ts
-│       ├── interfaces/
-│       │   └── jwt.interface.ts
-│       └── strategies/
-│           └── jwt.strategy.ts
+│       │   └── create-review.ts
+│       └── entities/
+│           └── review.entity.ts
 ├── test/
 │   └── app.e2e-spec.ts
 ├── .dockerignore
@@ -199,45 +237,14 @@ Compu3-TallerNest_TutorLink/
 └── vitest.config.e2e.ts
 ```
 
-Al implementar lo que falta, el árbol de `src/` queda así. Estas carpetas todavía no existen:
+Todavía no existen el seed, la colección de Postman ni el workflow de GitHub Actions:
 
 ```text
-src/
-├── subject/
-│   ├── subject.module.ts
-│   ├── subject.controller.ts
-│   ├── subject.service.ts
-│   ├── dto/
-│   └── entities/
-│       └── subject.entity.ts
-├── tutor/
-│   ├── tutor.module.ts
-│   ├── tutor.controller.ts
-│   ├── tutor.service.ts
-│   ├── dto/
-│   └── entities/
-│       └── tutor-profile.entity.ts
-├── booking/
-│   ├── booking.module.ts
-│   ├── booking.controller.ts
-│   ├── booking.service.ts
-│   ├── dto/
-│   ├── entities/
-│   │   └── booking.entity.ts
-│   └── enums/
-│       └── booking-status.enum.ts
-├── review/                          # opcional
-│   ├── review.module.ts
-│   ├── review.controller.ts
-│   ├── review.service.ts
-│   ├── dto/
-│   └── entities/
-│       └── review.entity.ts
-└── seed/
-    ├── seed.module.ts
-    ├── seed.controller.ts
-    ├── seed.service.ts
-    └── data/
+src/seed/
+├── seed.module.ts
+├── seed.controller.ts
+├── seed.service.ts
+└── data/
+postman/
+.github/workflows/
 ```
-
-La colección de Postman va en `postman/`. El workflow de GitHub Actions va en `.github/workflows/`.
