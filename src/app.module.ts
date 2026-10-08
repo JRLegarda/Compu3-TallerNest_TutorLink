@@ -6,6 +6,7 @@ import { SubjectModule } from './subject/subject.module.js';
 import { TutorModule } from './tutor/tutor.module.js';
 import { BookingModule } from './booking/booking.module.js';
 import { ReviewModule } from './review/review.module.js';
+import { SeedModule } from './seed/seed.module.js';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { ReviewModule } from './review/review.module.js';
     TutorModule,
     BookingModule,
     ReviewModule,
+    SeedModule,
   ],
   controllers: [],
   providers: [],

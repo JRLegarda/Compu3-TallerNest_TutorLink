@@ -1,0 +1,893 @@
+{
+  "auth": {
+    "bearer": [
+      {
+        "key": "token",
+        "type": "string",
+        "value": "{{token}}"
+      }
+    ],
+    "type": "bearer"
+  },
+  "info": {
+    "_postman_id": "tutorlink-0000-0000-0000-000000000001",
+    "description": "Colección para probar TutorLink (NestJS + TypeORM + PostgreSQL). Usa `{{baseUrl}}` (por defecto http://localhost:9000/tutorlink) para no repetir la URL.\n\nAntes de usarla: crear el `.env` del README, levantar solo la base (`docker compose up -d db`), correr la app (`npm run start:dev`) y ejecutar **Seed** con la `{{seedKey}}` (carga admin, materias, 2 tutores y 2 estudiantes).\n\n**Autenticación:** la colección usa Bearer Token con `{{token}}`. \"Registrarse\" e \"Iniciar sesión\" guardan el token solas. Para flujos con otro rol, inicien sesión con ese usuario (el token se sobrescribe): admin del seed, un tutor (`tutor1@example.com`) o un estudiante (`ana@example.com`, password `Secreta123`).\n\nOrden sugerido: Seed → Iniciar sesión (admin) → Materias → Dar rol tutor → Iniciar sesión (tutor) → Crear perfil → Verificar (admin) → Iniciar sesión (estudiante) → Reservar → Confirmar/Completar (tutor).\n\nSwagger UI: http://localhost:9000/docs",
+    "name": "TutorLink",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "description": "Registro, login, perfil propio y administración (solo admin)",
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('token', res.token);",
+                  "  console.log('Token guardado en {{token}}');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "user-signup",
+          "name": "Registrarse (signup)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"fullName\": \"Estudiante Nuevo\"\n}"
+            },
+            "description": "Crea un usuario con rol `student` y devuelve un `token` (el script lo guarda en `{{token}}`). Si el email ya existe responde `409`.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "signup"
+              ],
+              "raw": "{{baseUrl}}/user/signup"
+            }
+          },
+          "response": []
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) {",
+                  "  pm.collectionVariables.set('token', res.token);",
+                  "  console.log('Token guardado en {{token}}');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "user-auth",
+          "name": "Iniciar sesión (auth)",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+            },
+            "description": "Devuelve un `token` nuevo (dura 1h) y lo guarda en `{{token}}`. Para probar otro rol cambien `userEmail`/`userPassword` (admin del seed, `tutor1@example.com` o `ana@example.com`, todos con `Secreta123` salvo el admin).",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "auth"
+              ],
+              "raw": "{{baseUrl}}/user/auth"
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "user-me",
+          "name": "Ver mi perfil (me)",
+          "request": {
+            "description": "Requiere cualquier sesión (`@Auth()`).",
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "me"
+              ],
+              "raw": "{{baseUrl}}/user/me"
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "user-logout",
+          "name": "Cerrar sesión (logout)",
+          "request": {
+            "description": "Invalida el token actual (sube `tokenVersion`). Requiere sesión.",
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "logout"
+              ],
+              "raw": "{{baseUrl}}/user/logout"
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "user-list",
+          "name": "Listar usuarios (admin)",
+          "request": {
+            "description": "Solo admin. Acepta `limit` y `skip`.",
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                }
+              ],
+              "raw": "{{baseUrl}}/user?limit=10&skip=0"
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "user-get",
+          "name": "Ver un usuario (admin)",
+          "request": {
+            "description": "Solo admin. `id` es el UUID del usuario.",
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                ":id"
+              ],
+              "raw": "{{baseUrl}}/user/:id",
+              "variable": [
+                {
+                  "description": "UUID del usuario",
+                  "key": "id",
+                  "value": "{{userId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "user-roles",
+          "name": "Asignar roles (admin)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"roles\": [\"tutor\"]\n}"
+            },
+            "description": "Solo admin. Así se otorga el rol `tutor` antes de que esa persona cree su perfil (`PUT /tutor/me`). Pongan en `:id` el UUID del futuro tutor (o su `{{userId}}`).",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                ":id",
+                "roles"
+              ],
+              "raw": "{{baseUrl}}/user/:id/roles",
+              "variable": [
+                {
+                  "description": "UUID del usuario",
+                  "key": "id",
+                  "value": "{{userId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "user-delete",
+          "name": "Desactivar usuario (admin)",
+          "request": {
+            "description": "Solo admin. Desactiva en vez de borrar. No puede desactivarse a sí mismo.",
+            "method": "DELETE",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                ":id"
+              ],
+              "raw": "{{baseUrl}}/user/:id",
+              "variable": [
+                {
+                  "description": "UUID del usuario",
+                  "key": "id",
+                  "value": "{{userId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "name": "User"
+    },
+    {
+      "description": "Crear/editar/borrar es solo admin; listar y ver exigen sesión",
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) {",
+                  "  pm.collectionVariables.set('subjectId', res.id);",
+                  "  console.log('Materia guardada en {{subjectId}}: ' + res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "subject-create",
+          "name": "Crear materia (admin)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Cálculo I\",\n  \"university\": \"ICESI\",\n  \"semester\": \"3\"\n}"
+            },
+            "description": "Solo admin. No puede repetirse nombre+universidad+semestre (`409`). El script guarda el `id` en `{{subjectId}}`.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject"
+              ],
+              "raw": "{{baseUrl}}/subject"
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "subject-list",
+          "name": "Listar materias",
+          "request": {
+            "description": "Requiere sesión. Filtros: `university`, `semester`, `search` (por nombre), `limit`, `skip`.",
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject"
+              ],
+              "query": [
+                {
+                  "description": "Filtro por universidad",
+                  "key": "university",
+                  "value": "ICESI"
+                },
+                {
+                  "description": "Filtro por semestre",
+                  "key": "semester",
+                  "value": "3"
+                },
+                {
+                  "description": "Búsqueda por nombre",
+                  "key": "search",
+                  "value": "cálculo"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                }
+              ],
+              "raw": "{{baseUrl}}/subject?university=ICESI&semester=3&search=cálculo&limit=10&skip=0"
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "subject-get",
+          "name": "Ver una materia",
+          "request": {
+            "description": "Requiere sesión.",
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject",
+                ":id"
+              ],
+              "raw": "{{baseUrl}}/subject/:id",
+              "variable": [
+                {
+                  "description": "UUID de la materia",
+                  "key": "id",
+                  "value": "{{subjectId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "subject-update",
+          "name": "Editar materia (admin)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"semester\": \"4\"\n}"
+            },
+            "description": "Solo admin. Acepta cualquier subconjunto de `name`, `university`, `semester`.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject",
+                ":id"
+              ],
+              "raw": "{{baseUrl}}/subject/:id",
+              "variable": [
+                {
+                  "description": "UUID de la materia",
+                  "key": "id",
+                  "value": "{{subjectId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "subject-delete",
+          "name": "Borrar materia (admin)",
+          "request": {
+            "description": "Solo admin.",
+            "method": "DELETE",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject",
+                ":id"
+              ],
+              "raw": "{{baseUrl}}/subject/:id",
+              "variable": [
+                {
+                  "description": "UUID de la materia",
+                  "key": "id",
+                  "value": "{{subjectId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "name": "Subject"
+    },
+    {
+      "description": "El perfil no es el usuario: es `tutor_profile` ligado al usuario con rol tutor",
+      "item": [
+        {
+          "id": "tutor-upsert",
+          "name": "Crear o reemplazar mi perfil (tutor)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bio\": \"Estudiante de ingeniería con 3 semestres dando tutorías de cálculo.\",\n  \"hourlyRate\": 15000,\n  \"academicHistory\": \"Monitor de Cálculo I (2025), promedio 4.5.\",\n  \"university\": \"ICESI\",\n  \"subjectIds\": [\"{{subjectId}}\"]\n}"
+            },
+            "description": "Solo rol `tutor` (el admin lo otorga con `PATCH /user/:id/roles`). Crea el perfil o lo reemplaza si ya existe. Las materias deben existir. Hagan login como tutor antes (el `{{token}}` se sobrescribe).",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "PUT",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tutor",
+                "me"
+              ],
+              "raw": "{{baseUrl}}/tutor/me"
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "tutor-list",
+          "name": "Listar tutores",
+          "request": {
+            "description": "Requiere sesión. Filtros: `subjectId` (solo quienes dictan esa materia), `university`, `maxRate` (tarifa máxima), `verified` (true/false), `limit`, `skip`.",
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tutor"
+              ],
+              "query": [
+                {
+                  "description": "Solo quienes dictan esta materia",
+                  "key": "subjectId",
+                  "value": "{{subjectId}}"
+                },
+                {
+                  "key": "university",
+                  "value": "ICESI"
+                },
+                {
+                  "description": "Tarifa máxima en COP",
+                  "key": "maxRate",
+                  "value": "20000"
+                },
+                {
+                  "description": "Solo verificados",
+                  "key": "verified",
+                  "value": "true"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                }
+              ],
+              "raw": "{{baseUrl}}/tutor?subjectId={{subjectId}}&university=ICESI&maxRate=20000&verified=true&limit=10&skip=0"
+            }
+          },
+          "response": []
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) {",
+                  "  pm.collectionVariables.set('tutorProfileId', res.id);",
+                  "  console.log('Tutor guardado en {{tutorProfileId}}: ' + res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "tutor-get",
+          "name": "Ver un tutor",
+          "request": {
+            "description": "Requiere sesión. Guarda el `id` en `{{tutorProfileId}}` para reservar.",
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tutor",
+                ":id"
+              ],
+              "raw": "{{baseUrl}}/tutor/:id",
+              "variable": [
+                {
+                  "description": "UUID del perfil del tutor",
+                  "key": "id",
+                  "value": "{{tutorProfileId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "tutor-verify",
+          "name": "Verificar tutor (admin)",
+          "request": {
+            "description": "Solo admin. Marca el perfil como verificado (hagan login como admin antes).",
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tutor",
+                ":id",
+                "verify"
+              ],
+              "raw": "{{baseUrl}}/tutor/:id/verify",
+              "variable": [
+                {
+                  "description": "UUID del perfil del tutor",
+                  "key": "id",
+                  "value": "{{tutorProfileId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "name": "Tutor"
+    },
+    {
+      "description": "Estados: PENDING, CONFIRMED, CANCELLED, COMPLETED",
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.id) {",
+                  "  pm.collectionVariables.set('bookingId', res.id);",
+                  "  console.log('Reserva guardada en {{bookingId}}: ' + res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "booking-create",
+          "name": "Crear reserva (student)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{subjectId}}\",\n  \"startAt\": \"2026-10-20T14:00:00.000Z\",\n  \"endAt\": \"2026-10-20T15:00:00.000Z\"\n}"
+            },
+            "description": "Solo rol `student` (hagan login como estudiante antes). El tutor debe dictar la materia y no tener otra reserva activa que se cruce (`409`). Las fechas deben ser futuras y `endAt` posterior a `startAt`. El script guarda el `id` en `{{bookingId}}`.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "booking-mine",
+          "name": "Ver mis reservas",
+          "request": {
+            "description": "Requiere sesión. Devuelve reservas donde soy el estudiante o el tutor. Filtro opcional `status` y paginación.",
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "mine"
+              ],
+              "query": [
+                {
+                  "description": "PENDING, CONFIRMED, CANCELLED o COMPLETED",
+                  "key": "status",
+                  "value": "PENDING"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                }
+              ],
+              "raw": "{{baseUrl}}/booking/mine?status=PENDING&limit=10&skip=0"
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "booking-confirm",
+          "name": "Confirmar reserva (tutor dueño)",
+          "request": {
+            "description": "Solo el tutor dueño (hagan login como tutor antes). Pasa PENDING → CONFIRMED.",
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                ":id",
+                "confirm"
+              ],
+              "raw": "{{baseUrl}}/booking/:id/confirm",
+              "variable": [
+                {
+                  "description": "UUID de la reserva",
+                  "key": "id",
+                  "value": "{{bookingId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "booking-cancel",
+          "name": "Cancelar reserva (dueño)",
+          "request": {
+            "description": "El dueño de la reserva (estudiante o tutor). Pasa PENDING/CONFIRMED → CANCELLED.",
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                ":id",
+                "cancel"
+              ],
+              "raw": "{{baseUrl}}/booking/:id/cancel",
+              "variable": [
+                {
+                  "description": "UUID de la reserva",
+                  "key": "id",
+                  "value": "{{bookingId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "id": "booking-complete",
+          "name": "Completar reserva (tutor dueño)",
+          "request": {
+            "description": "Solo el tutor dueño. Pasa CONFIRMED → COMPLETED (luego se podrá reseñar).",
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                ":id",
+                "complete"
+              ],
+              "raw": "{{baseUrl}}/booking/:id/complete",
+              "variable": [
+                {
+                  "description": "UUID de la reserva",
+                  "key": "id",
+                  "value": "{{bookingId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "name": "Booking"
+    },
+    {
+      "description": "Carga datos iniciales (admin, materias, tutores, estudiantes). Borra booking, tutor_profile, subject y user en ese orden.",
+      "item": [
+        {
+          "id": "seed-run",
+          "name": "Ejecutar seed",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Borra y recarga todo. `key` debe coincidir con `SEED_KEY` del `.env` (si no, `401`). Úsenlo solo en su base local.",
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seed"
+              ],
+              "query": [
+                {
+                  "description": "Debe coincidir con SEED_KEY del .env",
+                  "key": "key",
+                  "value": "{{seedKey}}"
+                }
+              ],
+              "raw": "{{baseUrl}}/seed?key={{seedKey}}"
+            }
+          },
+          "response": []
+        }
+      ],
+      "name": "Seed"
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "type": "string",
+      "value": "http://localhost:9000/tutorlink"
+    },
+    {
+      "key": "userEmail",
+      "type": "string",
+      "value": "ana@example.com",
+      "description": "Email para registrarse e iniciar sesión"
+    },
+    {
+      "key": "userPassword",
+      "type": "string",
+      "value": "Secreta123",
+      "description": "Contraseña (8 a 16 caracteres)"
+    },
+    {
+      "key": "token",
+      "type": "string",
+      "value": "",
+      "description": "JWT. Lo guardan solas las peticiones de registro/login"
+    },
+    {
+      "key": "userId",
+      "type": "string",
+      "value": "",
+      "description": "UUID de un usuario (para rutas admin)"
+    },
+    {
+      "key": "subjectId",
+      "type": "string",
+      "value": "",
+      "description": "UUID de una materia. Lo llena Crear materia"
+    },
+    {
+      "key": "tutorProfileId",
+      "type": "string",
+      "value": "",
+      "description": "UUID del perfil del tutor. Lo llena Ver un tutor"
+    },
+    {
+      "key": "bookingId",
+      "type": "string",
+      "value": "",
+      "description": "UUID de la última reserva. Lo llena Crear reserva"
+    },
+    {
+      "key": "seedKey",
+      "type": "string",
+      "value": "mi-clave-seed",
+      "description": "Debe coincidir con SEED_KEY del .env"
+    }
+  ]
+}
