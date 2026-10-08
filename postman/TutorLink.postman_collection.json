@@ -25,6 +25,9 @@
               "listen": "test",
               "script": {
                 "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+                  "});",
                   "const res = pm.response.json();",
                   "if (res.token) {",
                   "  pm.collectionVariables.set('token', res.token);",
@@ -77,6 +80,9 @@
               "listen": "test",
               "script": {
                 "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});",
                   "const res = pm.response.json();",
                   "if (res.token) {",
                   "  pm.collectionVariables.set('token', res.token);",
@@ -140,7 +146,20 @@
               "raw": "{{baseUrl}}/user/me"
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "user-logout",
@@ -159,7 +178,20 @@
               "raw": "{{baseUrl}}/user/logout"
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([201]);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "user-list",
@@ -187,7 +219,20 @@
               "raw": "{{baseUrl}}/user?limit=10&skip=0"
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "user-get",
@@ -213,7 +258,20 @@
               ]
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "user-roles",
@@ -255,7 +313,20 @@
               ]
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "user-delete",
@@ -281,7 +352,20 @@
               ]
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ],
       "name": "User"
@@ -295,6 +379,9 @@
               "listen": "test",
               "script": {
                 "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+                  "});",
                   "const res = pm.response.json();",
                   "if (res.id) {",
                   "  pm.collectionVariables.set('subjectId', res.id);",
@@ -378,7 +465,20 @@
               "raw": "{{baseUrl}}/subject?university=ICESI&semester=3&search=cálculo&limit=10&skip=0"
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "subject-get",
@@ -404,7 +504,20 @@
               ]
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "subject-update",
@@ -445,7 +558,20 @@
               ]
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});"
+                ]
+              }
+            }
+          ]
         },
         {
           "id": "subject-delete",
@@ -471,7 +597,20 @@
               ]
             }
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
+                  "});"
+                ]
+              }
+            }
+          ]
         }
       ],
       "name": "Subject"
