@@ -128,7 +128,7 @@ docker compose up -d db
 npm run start:dev
 ```
 
-`docker compose up -d` (sin `db`) también intenta construir la API dentro de Docker. Hoy esa imagen falla porque `npm ci` del Dockerfile no coincide con el `package-lock.json`. Para desarrollar, Nest se corre en la máquina y Docker solo presta PostgreSQL.
+`docker compose up -d` (sin `db`) también intenta construir la API dentro de Docker. El `package-lock.json` está sincronizado con `package.json` (incluye un `overrides` que fija un solo TypeScript para todo el árbol, sin eso `npm ci` falla). Para desarrollar, de todos modos se recomienda correr Nest en la máquina y dejar que Docker solo preste PostgreSQL.
 
 PostgreSQL aplica `DB_PASSWORD` únicamente la primera vez que crea el volumen `pgdata`. Si el contenedor ya tenía datos y la contraseña del `.env` cambió, el login a la base sigue fallando. En ese caso hay que recrear el volumen o cambiar la contraseña del usuario dentro del contenedor.
 
