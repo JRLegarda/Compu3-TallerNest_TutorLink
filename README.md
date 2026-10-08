@@ -92,19 +92,23 @@ Colección en `postman/TutorLink.postman_collection.json`, con variables `baseUr
 
 ### Pruebas
 
-Hay pruebas unitarias (Vitest, sin base de datos) y de integración (Supertest, con base de datos). Un workflow de GitHub Actions (`.github/workflows/tests.yml`) instala, compila y corre las unitarias en cada push/PR.
+Hay pruebas unitarias (Vitest, sin base de datos) de usuarios, materias, tutores y reservas, y pruebas de integración (Supertest, con base de datos). Un workflow de GitHub Actions (`.github/workflows/tests.yml`) instala, compila y corre las unitarias en cada push y en cada pull request.
 
-| Qué | Dónde | Cómo se corre |
-|---|---|---|
-| Unitarias de tutor (8 tests) y booking (12 tests) | `src/tutor/tutor.service.spec.ts`, `src/booking/booking.service.spec.ts` | `npm run test` |
-| Cobertura | `npm run test:cov` | `tutor.service.ts` 93% sentencias, `booking.service.ts` 86% |
-| Integración (18 tests: humo + flujo seed → materias → perfil → reserva) | `test/tutor-booking.e2e-spec.ts`, `test/app.e2e-spec.ts` | Con la DB arriba: `RUN_E2E=true npm run test:e2e` |
+| Qué | Cómo se corre |
+|---|---|
+| Unitarias | `npm test` |
+| Cobertura | `npm run test:cov` |
+| Integración (seed, usuarios, materias, tutores y reservas) | Con la base arriba: `RUN_E2E=true npm run test:e2e` |
 
-Las e2e se saltan solas si no está `RUN_E2E=true`, porque necesitan PostgreSQL y el `.env`.
+Las de integración se saltan solas si no está `RUN_E2E=true`, porque necesitan PostgreSQL y el `.env`. Ese comando también ejecuta el seed y borra los datos de la base local.
 
 ## Cómo correrlo
 
-1. Crear un `.env` en la raíz (no se sube a git) con:
+Hace falta Node.js y Docker. Desde la raíz del proyecto:
+
+### 1. Variables de entorno
+
+Crear un `.env` en la raíz (no se sube a git) con:
 
 ```env
 DB_HOST=localhost
@@ -120,7 +124,7 @@ ADMIN_FULL_NAME=Administrador TutorLink
 SEED_KEY=una_clave_para_el_seed
 ```
 
-2. Instalar dependencias y levantar solo la base:
+### 2. Instalar, base de datos y API
 
 ```bash
 npm install
@@ -128,13 +132,53 @@ docker compose up -d db
 npm run start:dev
 ```
 
-`docker compose up -d` (sin `db`) también intenta construir la API dentro de Docker. El `package-lock.json` está sincronizado con `package.json` (incluye un `overrides` que fija un solo TypeScript para todo el árbol, sin eso `npm ci` falla). Para desarrollar, de todos modos se recomienda correr Nest en la máquina y dejar que Docker solo preste PostgreSQL.
+La API queda en `http://localhost:9000/tutorlink`. `start:dev` recompila al guardar.
+
+`docker compose up -d` (sin `db`) también intenta construir la API dentro de Docker. El `package-lock.json` está sincronizado con `package.json` (incluye un `overrides` que fija un solo TypeScript para todo el árbol, sin eso `npm ci` falla). Para desarrollar, Nest se corre en la máquina y Docker solo presta PostgreSQL.
 
 PostgreSQL aplica `DB_PASSWORD` únicamente la primera vez que crea el volumen `pgdata`. Si el contenedor ya tenía datos y la contraseña del `.env` cambió, el login a la base sigue fallando. En ese caso hay que recrear el volumen o cambiar la contraseña del usuario dentro del contenedor.
 
 `synchronize: true` en `app.module.ts` crea y altera tablas al arrancar. Sirve en desarrollo. No se deja así en producción.
 
-3. Cargar datos iniciales (solo base local):
+### 3. Swagger
+
+Con la API corriendo, abrir:
+
+[http://localhost:9000/docs](http://localhost:9000/docs)
+
+Ahí están todos los endpoints. En las rutas protegidas, **Authorize** pide el JWT (el mismo que devuelve el login). No hace falta el prefijo `Bearer`: Swagger lo agrega.
+
+### 4. Datos iniciales
+
+Solo en la base local, y solo cuando la API ya está arriba:
+
+```bash
+curl "http://localhost:9000/tutorlink/seed?key=una_clave_para_el_seed"
+```
+
+Debe responder `SEED EXECUTED`. La misma petición está en la carpeta Seed de Postman. Vuelve a borrar y recargar usuarios, materias, tutores y reservas.
+
+### 5. Pruebas unitarias
+
+No necesitan la base ni el servidor. Se pueden correr con la API apagada:
+
+```bash
+npm test
+```
+
+Para ver el porcentaje de cobertura:
+
+```bash
+npm run test:cov
+```
+
+### 6. Postman
+
+Importar `postman/TutorLink.postman_collection.json` en Postman. La colección ya trae `baseUrl` (`http://localhost:9000/tutorlink`). Al iniciar sesión, el script guarda el token. El orden sugerido está en la descripción de la colección: Seed, login de admin, materias, tutores y reservas.
+
+### 7. Probar un flujo a mano
+
+Con el servidor arriba y el seed ejecutado:
 
 ```bash
 curl "http://localhost:9000/tutorlink/seed?key=una_clave_para_el_seed"
@@ -186,7 +230,7 @@ curl -X PATCH http://localhost:9000/tutorlink/booking/<id_reserva>/complete \
   -H "Authorization: Bearer <token_tutor>"
 ```
 
-Todo lo anterior también está, clic por clic, en la colección Postman (carpetas User, Subject, Tutor, Booking y Seed) y documentado en `http://localhost:9000/docs`.
+Ese mismo flujo está en Swagger y en la colección de Postman.
 
 ## Qué falta
 
@@ -196,7 +240,7 @@ Solo se puede reseñar una reserva `COMPLETED` propia. Una reseña por reserva. 
 
 ### Cobertura global
 
-La consigna pide al menos **80%** de cobertura. Los servicios de tutor y booking están cubiertos (93% y 86% de sentencias), pero faltan pruebas de `user`, `subject` y `seed`.
+La consigna pide al menos **80%** de cobertura de todo el código. Usuarios y materias ya tienen pruebas de servicio, controller, guard y JWT. Tutores y reservas tienen pruebas de servicio. Sigue faltando cubrir seed, reseñas y los controllers de tutor y booking para llegar a ese 80% sobre todo `src`. Se mide con `npm run test:cov`.
 
 ### Despliegue
 
@@ -223,7 +267,9 @@ Compu3-TallerNest_TutorLink/
 │   ├── user/
 │   │   ├── user.module.ts
 │   │   ├── user.controller.ts
+│   │   ├── user.controller.spec.ts
 │   │   ├── user.service.ts
+│   │   ├── user.service.spec.ts
 │   │   ├── decorators/
 │   │   │   ├── auth.decorator.ts
 │   │   │   ├── get-user.decorator.ts
@@ -246,7 +292,9 @@ Compu3-TallerNest_TutorLink/
 │   ├── subject/
 │   │   ├── subject.module.ts
 │   │   ├── subject.controller.ts
+│   │   ├── subject.controller.spec.ts
 │   │   ├── subject.service.ts
+│   │   ├── subject.service.spec.ts
 │   │   ├── dto/
 │   │   │   ├── create-subject.dto.ts
 │   │   │   ├── update-subject.dto.ts
@@ -293,6 +341,7 @@ Compu3-TallerNest_TutorLink/
 │           └── seed.data.ts
 ├── test/
 │   ├── app.e2e-spec.ts
+│   ├── user-subject.e2e-spec.ts
 │   └── tutor-booking.e2e-spec.ts
 ├── postman/
 │   └── TutorLink.postman_collection.json

@@ -31,13 +31,7 @@ export class SubjectService {
     }
   }
 
-  findAll({
-    limit = 10,
-    skip = 0,
-    university,
-    semester,
-    search,
-  }: FilterSubject) {
+  findAll({limit = 10,skip = 0,university,semester,search,}: FilterSubject) {
     const query = this.subjectRepository.createQueryBuilder('subject');
 
     if (university?.trim()) {

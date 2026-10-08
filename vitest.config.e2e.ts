@@ -7,5 +7,7 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.e2e-spec.ts'],
+    // User+Subject y Tutor+Booking comparten la base y ambos ejecutan el seed.
+    fileParallelism: false,
   },
 });
