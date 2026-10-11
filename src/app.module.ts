@@ -2,6 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { UserModule } from './user/user.module.js';
+import { SubjectModule } from './subject/subject.module.js';
+import { TutorModule } from './tutor/tutor.module.js';
+import { BookingModule } from './booking/booking.module.js';
+import { ReviewModule } from './review/review.module.js';
+import { SeedModule } from './seed/seed.module.js';
 
 @Module({
   imports: [
@@ -17,6 +22,11 @@ import { UserModule } from './user/user.module.js';
       synchronize: true, // Solo en desarrollo, no usar en producción
     }),
     UserModule,
+    SubjectModule,
+    TutorModule,
+    BookingModule,
+    ReviewModule,
+    SeedModule,
   ],
   controllers: [],
   providers: [],
