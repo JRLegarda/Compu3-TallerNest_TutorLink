@@ -70,7 +70,7 @@ export class ReviewService {
             this.reviewRepository
             .createQueryBuilder('review')
             .innerJoin('review.tutorProfile', 'tp')
-            .where('tp.id = : tutorProfileId', { tutorProfileId })
+            .where('tp.id = :tutorProfileId', { tutorProfileId })
             .select('AVG(review.rating)', 'avg')
             .getRawOne<{ avg : string | null }>(),
         ]);
