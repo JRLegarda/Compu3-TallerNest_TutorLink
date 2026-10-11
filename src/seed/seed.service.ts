@@ -98,6 +98,7 @@ export class SeedService {
 
   // Borrar en este orden por las llaves foráneas
   private async deleteAll() {
+    await this.dataSource.query('DELETE FROM "review"');
     await this.dataSource.query('DELETE FROM "booking"');
     await this.dataSource.query('DELETE FROM "tutor_profile_subjects"');
     await this.dataSource.query('DELETE FROM "tutor_profile"');
