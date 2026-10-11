@@ -28,3 +28,10 @@ jobs:
           name: coverage
           path: coverage/
           if-no-files-found: ignore
+  deploy:
+    needs: unit
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Avisarle a Render que despliegue
+        run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
