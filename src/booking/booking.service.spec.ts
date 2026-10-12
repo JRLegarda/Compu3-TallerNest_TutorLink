@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -144,6 +145,24 @@ describe('BookingService', () => {
 
       await expect(service.create(student, futureDto())).rejects.toThrow(ConflictException);
     });
+
+    it('rejects dates that are not real dates', async () => {
+      const dto = futureDto();
+      dto.startAt = 'manana';
+
+      await expect(service.create(student, dto)).rejects.toThrow(BadRequestException);
+      expect(bookingRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('maps a unique violation and an unexpected save error', async () => {
+      bookingRepo.save.mockRejectedValueOnce({ code: '23505', detail: 'duplicated' });
+      await expect(service.create(student, futureDto())).rejects.toThrow(ConflictException);
+
+      bookingRepo.save.mockRejectedValueOnce(new Error('db down'));
+      await expect(service.create(student, futureDto())).rejects.toThrow(
+        InternalServerErrorException,
+      );
+    });
   });
 
   describe('findMine', () => {
@@ -156,6 +175,17 @@ describe('BookingService', () => {
       expect(result).toHaveLength(1);
       expect(qb.where).toHaveBeenCalledWith('student.id = :userId OR tutorUser.id = :userId', {
         userId: student.id,
+      });
+    });
+
+    it('filters my bookings by status', async () => {
+      const qb = queryBuilderMock([]);
+      bookingRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findMine(tutorUser, { status: BookingStatus.CONFIRMED } as any);
+
+      expect(qb.andWhere).toHaveBeenCalledWith('booking.status = :status', {
+        status: BookingStatus.CONFIRMED,
       });
     });
   });
@@ -214,6 +244,34 @@ describe('BookingService', () => {
       bookingRepo.findOne.mockResolvedValue(storedBooking());
 
       await expect(service.complete('booking-1', tutorUser)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects confirming when another booking is already confirmed in that range', async () => {
+      bookingRepo.findOne.mockResolvedValue(storedBooking());
+      bookingRepo.createQueryBuilder.mockReturnValue(queryBuilderMock(storedBooking({ id: 'other' })));
+
+      await expect(service.confirm('booking-1', tutorUser)).rejects.toThrow(ConflictException);
+      expect(bookingRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('lets the owning tutor cancel and rejects a second cancel', async () => {
+      bookingRepo.findOne.mockResolvedValue(storedBooking({ status: BookingStatus.CONFIRMED }));
+      bookingRepo.save.mockImplementation(async (b: any) => b);
+
+      const booking: any = await service.cancel('booking-1', tutorUser);
+      expect(booking.status).toBe(BookingStatus.CANCELLED);
+
+      bookingRepo.findOne.mockResolvedValue(storedBooking({ status: BookingStatus.CANCELLED }));
+      await expect(service.cancel('booking-1', tutorUser)).rejects.toThrow(BadRequestException);
+    });
+
+    it('maps an unexpected error when completing', async () => {
+      bookingRepo.findOne.mockResolvedValue(storedBooking({ status: BookingStatus.CONFIRMED }));
+      bookingRepo.save.mockRejectedValue(new Error('db down'));
+
+      await expect(service.complete('booking-1', tutorUser)).rejects.toThrow(
+        InternalServerErrorException,
+      );
     });
   });
 });

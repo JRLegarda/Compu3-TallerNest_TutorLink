@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -142,5 +143,25 @@ describe('ReviewService', () => {
     // assert
     expect(result.count).toBe(0);
     expect(result.average).toBe(0);
+  });
+
+  it('trims the comment before saving', async () => {
+    bookingRepo.findOne.mockResolvedValue(completedBooking);
+    reviewRepo.findOne.mockResolvedValue(null);
+
+    const result = await service.create(student, { ...dto, comment: '  Explica claro.  ' });
+
+    expect(result.comment).toBe('Explica claro.');
+  });
+
+  it('maps a unique violation and an unexpected save error', async () => {
+    bookingRepo.findOne.mockResolvedValue(completedBooking);
+    reviewRepo.findOne.mockResolvedValue(null);
+    reviewRepo.save.mockRejectedValueOnce({ code: '23505', detail: 'duplicated' });
+
+    await expect(service.create(student, dto)).rejects.toBeInstanceOf(ConflictException);
+
+    reviewRepo.save.mockRejectedValueOnce(new Error('db down'));
+    await expect(service.create(student, dto)).rejects.toBeInstanceOf(InternalServerErrorException);
   });
 });

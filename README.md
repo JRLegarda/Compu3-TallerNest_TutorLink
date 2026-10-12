@@ -92,7 +92,7 @@ Solo se puede reseñar una reserva `COMPLETED` propia. Una reseña por reserva.
 | POST | `/tutorlink/review` | Student dueño. Body: `bookingId`, `rating` (1 a 5), `comment`. |
 | GET | `/tutorlink/review/tutor/:tutorId` | Autenticado. Devuelve `average`, `count` y `reviews`. |
 
-Si la reserva no está `COMPLETED`, responde 400. Si no es del estudiante, 403. Si ya tiene reseña, 409. Si no existe, 404.
+Si la reserva no está `COMPLETED`, responde 400. Si no es del estudiante, 403. Si ya tiene reseña, 409. Si no existe, 404. `ReviewModule` importa `UserModule` para que el guard de JWT y el de roles queden registrados en estas rutas, igual que en el resto de la API.
 
 ### Seed
 
@@ -108,21 +108,21 @@ Credenciales de prueba (todas con `Secreta123`, salvo el admin): `tutor1@example
 
 ### Postman
 
-Colección en `postman/TutorLink.postman_collection.json`, con variables `baseUrl` (`http://localhost:9000/tutorlink`) y `token` (se guarda solo al registrarse o iniciar sesión). Cubre usuarios, materias, tutores, reservas, reseñas y seed. Para los flujos con otro rol, basta iniciar sesión con ese usuario (el token se sobrescribe).
+Colección en `postman/TutorLink.postman_collection.json`, con variables `baseUrl` (`https://compu3-tallernest-tutorlink.onrender.com/tutorlink`) y `token` (se guarda solo al registrarse o iniciar sesión). Cubre usuarios, materias, tutores, reservas, reseñas y seed. La carpeta **Escenarios** se corre después del seed y prueba los rechazos: horario pasado o cruzado, materia que el tutor no dicta, rol equivocado, reseña antes de completar, reseña ajena, reseña duplicada y promedio. Las fechas de las reservas las calcula la colección, así no se vencen. Para los flujos con otro rol, basta iniciar sesión con ese usuario (el token se sobrescribe).
 
 ### Pruebas
 
 Hay pruebas unitarias (Vitest, sin base de datos) de usuarios, materias, tutores, reservas, reseñas y seed, y pruebas de integración (Supertest, con base de datos). Un workflow de GitHub Actions (`.github/workflows/tests.yml`) corre en cada push y en cada pull request a `main`. El job `unit` instala, compila, pasa el linter y corre las unitarias con cobertura. El job `e2e` levanta PostgreSQL 14.3 y corre `npm run test:e2e` con `RUN_E2E=true`. Si ambos pasan en un push a `main`, otro job avisa a Render para que vuelva a desplegar.
 
-`npm run test:cov` exige al menos 80 % de líneas, funciones, branches y statements. La medición actual queda por encima: líneas 90,98 %, statements 90,05 %, funciones 82,69 % y branches 82,58 % (80 pruebas, 15 archivos).
+`npm run test:cov` exige al menos 80 % de líneas, funciones, branches y statements. La medición actual queda por encima: líneas 94,8 %, statements 94,13 %, funciones 84,61 % y branches 90,32 % (92 pruebas unitarias, 15 archivos). Las de integración son 38, en cuatro archivos.
 
 | Qué | Cómo se corre |
 |---|---|
 | Unitarias | `npm test` |
 | Cobertura | `npm run test:cov` |
-| Integración (seed, usuarios, materias, tutores y reservas) | Con la base arriba: `RUN_E2E=true npm run test:e2e` |
+| Integración (seed, usuarios, materias, tutores, reservas, reseñas y reglas de horario) | Con la base arriba: `RUN_E2E=true npm run test:e2e` |
 
-Las de integración se saltan solas si no está `RUN_E2E=true`, porque necesitan PostgreSQL y el `.env`. Ese comando también ejecuta el seed y borra los datos de la base local.
+Las de integración se saltan solas si no está `RUN_E2E=true`, porque necesitan PostgreSQL y el `.env`. Ese comando también ejecuta el seed y borra los datos de la base local. `test/marketplace-rules.e2e-spec.ts` recorre la búsqueda por universidad y materia, el filtro por tarifa y tutor verificado, las reservas inválidas, los rechazos por rol y la reseña solo sobre una sesión `COMPLETED` propia.
 
 ## Cómo correrlo
 
@@ -196,7 +196,7 @@ npm run test:cov
 
 ### 6. Postman
 
-Importar `postman/TutorLink.postman_collection.json` en Postman. La colección ya trae `baseUrl` (`http://localhost:9000/tutorlink`). Al iniciar sesión, el script guarda el token. El orden sugerido está en la descripción de la colección: Seed, login de admin, materias, tutores, reservas y, con la reserva ya en `COMPLETED`, la reseña del estudiante.
+Importar `postman/TutorLink.postman_collection.json` en Postman. La colección ya trae `baseUrl` (`https://compu3-tallernest-tutorlink.onrender.com/tutorlink`), que es la URL de la sustentación. Al iniciar sesión, el script guarda el token. Antes de correr **Seed**, la variable `seedKey` tiene que ser la misma `SEED_KEY` del servicio en Render: si no coincide, responde 401. Después del seed, la carpeta **Escenarios** prueba el flujo y los rechazos contra esa URL. Las fechas de las reservas las calcula la colección.
 
 ### 7. Probar un flujo a mano
 
@@ -257,7 +257,7 @@ curl -X POST http://localhost:9000/tutorlink/review \
   -d '{ "bookingId": "<id_reserva>", "rating": 5, "comment": "Explica muy claro y es puntual." }'
 ```
 
-Ese mismo flujo está en Swagger y en la colección de Postman (usuarios, materias, tutores, reservas, reseñas y seed).
+Ese mismo flujo está en Swagger y en la colección de Postman. En Postman, la carpeta Escenarios lo recorre contra la API de Render, incluidos los rechazos.
 
 ## Despliegue
 
@@ -268,7 +268,7 @@ La API pública está en Render:
 - Swagger: [https://compu3-tallernest-tutorlink.onrender.com/docs](https://compu3-tallernest-tutorlink.onrender.com/docs)
 - Repositorio: [https://github.com/JRLegarda/Compu3-TallerNest_TutorLink](https://github.com/JRLegarda/Compu3-TallerNest_TutorLink)
 
-El servicio usa el `Dockerfile` del repo (Node 22, `node dist/main.js`). Las variables de base de datos, JWT, admin y `SEED_KEY` están en Render, no en git. Un push a `main` que pase las unitarias y las de integración dispara el deploy hook. Para probar esa instancia con Postman, cambia `baseUrl` a `https://compu3-tallernest-tutorlink.onrender.com/tutorlink`. El seed de producción borra la base de ese entorno.
+El servicio usa el `Dockerfile` del repo (Node 22, `node dist/main.js`). Las variables de base de datos, JWT, admin y `SEED_KEY` están en Render, no en git. Un push a `main` que pase las unitarias y las de integración dispara el deploy hook. La colección de Postman ya usa esa URL. El seed de producción borra la base de ese entorno.
 
 El detalle de endpoints, autenticación, autorización, persistencia y pruebas está en [`docs/Informe-TutorLink.docx`](docs/Informe-TutorLink.docx). Ese archivo es el que se adjunta en Intu. Este README queda para clonar el proyecto y correrlo.
 
@@ -363,6 +363,7 @@ Compu3-TallerNest_TutorLink/
 │           └── seed.data.ts
 ├── test/
 │   ├── app.e2e-spec.ts
+│   ├── marketplace-rules.e2e-spec.ts
 │   ├── user-subject.e2e-spec.ts
 │   └── tutor-booking.e2e-spec.ts
 ├── postman/
