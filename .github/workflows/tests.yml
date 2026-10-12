@@ -52,12 +52,12 @@ jobs:
       DB_NAME: tutorlink
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
-      JWT_SECRET: ci-jwt-secret
+      JWT_SECRET: ${{ secrets.CI_JWT_SECRET || 'ci-jwt-secret' }}
       JWT_EXPIRES_IN: 1h
-      ADMIN_EMAIL: admin@tutorlink.com
-      ADMIN_PASSWORD: Admin1234
+      ADMIN_EMAIL: ${{ vars.CI_ADMIN_EMAIL || 'admin@tutorlink.com' }}
+      ADMIN_PASSWORD: ${{ secrets.CI_ADMIN_PASSWORD || 'Admin1234' }}
       ADMIN_FULL_NAME: Administrador TutorLink
-      SEED_KEY: ci-seed-key
+      SEED_KEY: ${{ secrets.CI_SEED_KEY || 'ci-seed-key' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
