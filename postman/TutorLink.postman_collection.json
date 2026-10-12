@@ -11,7 +11,7 @@
   },
   "info": {
     "_postman_id": "tutorlink-0000-0000-0000-000000000001",
-    "description": "Colección para probar TutorLink (NestJS + TypeORM + PostgreSQL). Usa `{{baseUrl}}` (por defecto http://localhost:9000/tutorlink) para no repetir la URL.\n\nAntes de usarla: crear el `.env` del README, levantar solo la base (`docker compose up -d db`), correr la app (`npm run start:dev`) y ejecutar **Seed** con la `{{seedKey}}` (carga admin, materias, 2 tutores y 2 estudiantes).\n\n**Autenticación:** la colección usa Bearer Token con `{{token}}`. \"Registrarse\" e \"Iniciar sesión\" guardan el token solas. Para flujos con otro rol, inicien sesión con ese usuario (el token se sobrescribe): admin del seed, un tutor (`tutor1@example.com`) o un estudiante (`ana@example.com`, password `Secreta123`).\n\nOrden sugerido: Seed → Iniciar sesión (admin) → Materias → Dar rol tutor → Iniciar sesión (tutor) → Crear perfil → Verificar (admin) → Iniciar sesión (estudiante) → Reservar → Confirmar/Completar (tutor).\n\nSwagger UI: http://localhost:9000/docs",
+    "description": "Colección para probar TutorLink (NestJS + TypeORM + PostgreSQL). Usa `{{baseUrl}}` (por defecto http://localhost:9000/tutorlink) para no repetir la URL.\n\nAntes de usarla: crear el `.env` del README, levantar solo la base (`docker compose up -d db`), correr la app (`npm run start:dev`) y ejecutar **Seed** con la `{{seedKey}}` (carga admin, materias, 2 tutores y 2 estudiantes).\n\n**Autenticación:** la colección usa Bearer Token con `{{token}}`. \"Registrarse\" e \"Iniciar sesión\" guardan el token solas. Para flujos con otro rol, inicien sesión con ese usuario (el token se sobrescribe): admin del seed, un tutor (`tutor1@example.com`) o un estudiante (`ana@example.com`, password `Secreta123`).\n\nOrden sugerido: Seed → Iniciar sesión (admin) → Materias → Dar rol tutor → Iniciar sesión (tutor) → Crear perfil → Verificar (admin) → Iniciar sesión (estudiante) → Reservar → Confirmar/Completar (tutor) → Iniciar sesión (estudiante dueño) → Crear reseña → Listar reseñas del tutor.\n\nSwagger UI: http://localhost:9000/docs",
     "name": "TutorLink",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -940,7 +940,108 @@
       "name": "Booking"
     },
     {
-      "description": "Carga datos iniciales (admin, materias, tutores, estudiantes). Borra booking, tutor_profile, subject y user en ese orden.",
+      "description": "Una reseña por reserva COMPLETED, solo del estudiante dueño. Antes: completar la reserva como tutor y volver a iniciar sesión como ese estudiante. Usa {{bookingId}} y {{tutorProfileId}}.",
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "if (res.id) {",
+                  "  pm.collectionVariables.set('reviewId', res.id);",
+                  "  console.log('Reseña guardada en {{reviewId}}: ' + res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "review-create",
+          "name": "Crear reseña (student dueño)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 5,\n  \"comment\": \"Explica muy claro y es puntual.\"\n}"
+            },
+            "description": "Solo el estudiante dueño de una reserva COMPLETED (inicien sesión con ese usuario). rating va de 1 a 5 y comment de 3 a 500 caracteres. Si la reserva no está COMPLETED responde 400; si no es suya, 403; si no existe, 404; si ya tiene reseña, 409. El script guarda el id en {{reviewId}}.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            }
+          },
+          "response": []
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const res = pm.response.json();",
+                  "  pm.expect(res).to.have.property('average');",
+                  "  pm.expect(res).to.have.property('count');",
+                  "  pm.expect(res).to.have.property('reviews');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "review-by-tutor",
+          "name": "Listar reseñas de un tutor",
+          "request": {
+            "description": "Cualquier sesión. tutorId es el UUID del perfil ({{tutorProfileId}}), no el del usuario. Devuelve average, count y reviews.",
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review",
+                "tutor",
+                ":tutorId"
+              ],
+              "raw": "{{baseUrl}}/review/tutor/:tutorId",
+              "variable": [
+                {
+                  "description": "UUID del perfil de tutor",
+                  "key": "tutorId",
+                  "value": "{{tutorProfileId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "name": "Review"
+    },
+    {
+      "description": "Carga datos iniciales (admin, materias, tutores, estudiantes). Borra review, booking, tutor_profile, subject y user en ese orden.",
       "item": [
         {
           "id": "seed-run",
@@ -1021,6 +1122,12 @@
       "type": "string",
       "value": "",
       "description": "UUID de la última reserva. Lo llena Crear reserva"
+    },
+    {
+      "key": "reviewId",
+      "type": "string",
+      "value": "",
+      "description": "UUID de la última reseña. Lo llena Crear reseña"
     },
     {
       "key": "seedKey",
