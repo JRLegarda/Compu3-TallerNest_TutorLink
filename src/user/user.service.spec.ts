@@ -201,6 +201,30 @@ describe('UserService', () => {
     expect(userRepo.update).toHaveBeenCalledWith('user-1', { isActive: false });
     expect(userRepo.increment).toHaveBeenCalledWith({ id: 'user-1' }, 'tokenVersion', 1);
   });
+
+  it('does not close a session for a user that does not exist', async () => {
+    userRepo.findOneBy.mockResolvedValue(null);
+
+    await expect(service.logout('missing')).rejects.toThrow(NotFoundException);
+    expect(userRepo.increment).not.toHaveBeenCalled();
+  });
+
+  it('lets an admin keep the admin role while adding tutor', async () => {
+    const admin = { ...activeUser, id: 'admin-1', roles: [UserRole.ADMIN] } as User;
+    const updated = { ...admin, roles: [UserRole.ADMIN, UserRole.TUTOR] };
+    userRepo.findOneBy.mockResolvedValueOnce(admin).mockResolvedValueOnce(updated);
+
+    const result = await service.updateRoles(
+      'admin-1',
+      { roles: [UserRole.ADMIN, UserRole.TUTOR] },
+      admin,
+    );
+
+    expect(userRepo.update).toHaveBeenCalledWith('admin-1', {
+      roles: [UserRole.ADMIN, UserRole.TUTOR],
+    });
+    expect(result.roles).toContain(UserRole.ADMIN);
+  });
 });
 
 describe('User email hook', () => {

@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import request from 'supertest';
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import { AppModule } from './../src/app.module.js';
@@ -26,6 +27,8 @@ describe.skipIf(!enabled)('App (e2e)', () => {
         transformOptions: { enableImplicitConversion: true },
       }),
     );
+    const config = new DocumentBuilder().setTitle('TutorLink API').setVersion('1.0').addBearerAuth().build();
+    SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, config));
     await app.init();
   });
 

@@ -11,7 +11,7 @@
   },
   "info": {
     "_postman_id": "tutorlink-0000-0000-0000-000000000001",
-    "description": "Colección para probar TutorLink (NestJS + TypeORM + PostgreSQL). Usa `{{baseUrl}}` (por defecto http://localhost:9000/tutorlink) para no repetir la URL.\n\nAntes de usarla: crear el `.env` del README, levantar solo la base (`docker compose up -d db`), correr la app (`npm run start:dev`) y ejecutar **Seed** con la `{{seedKey}}` (carga admin, materias, 2 tutores y 2 estudiantes).\n\n**Autenticación:** la colección usa Bearer Token con `{{token}}`. \"Registrarse\" e \"Iniciar sesión\" guardan el token solas. Para flujos con otro rol, inicien sesión con ese usuario (el token se sobrescribe): admin del seed, un tutor (`tutor1@example.com`) o un estudiante (`ana@example.com`, password `Secreta123`).\n\nOrden sugerido: Seed → Iniciar sesión (admin) → Materias → Dar rol tutor → Iniciar sesión (tutor) → Crear perfil → Verificar (admin) → Iniciar sesión (estudiante) → Reservar → Confirmar/Completar (tutor).\n\nSwagger UI: http://localhost:9000/docs",
+    "description": "Colección para probar TutorLink desplegado en Render. `{{baseUrl}}` apunta a https://compu3-tallernest-tutorlink.onrender.com/tutorlink. La primera petición puede tardar si el servicio estaba dormido.\n\nEjecutar **Seed** con la `{{seedKey}}` (carga admin, materias, 2 tutores y 2 estudiantes). Borra los datos de esa base.\n\n**Autenticación:** la colección usa Bearer Token con `{{token}}`. \"Registrarse\" e \"Iniciar sesión\" guardan el token solas. Para flujos con otro rol, inicien sesión con ese usuario (el token se sobrescribe): admin del seed, un tutor (`tutor1@example.com`) o un estudiante (`ana@example.com`, password `Secreta123`).\n\nOrden sugerido: Seed → Iniciar sesión (admin) → Materias → Dar rol tutor → Iniciar sesión (tutor) → Crear perfil → Verificar (admin) → Iniciar sesión (estudiante) → Reservar → Confirmar/Completar (tutor) → Iniciar sesión (estudiante dueño) → Crear reseña → Listar reseñas del tutor. La carpeta Escenarios se corre después de Seed y no depende de las variables del flujo manual.\n\nSwagger UI: https://compu3-tallernest-tutorlink.onrender.com/docs",
     "name": "TutorLink",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
@@ -799,7 +799,7 @@
                   "language": "json"
                 }
               },
-              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{subjectId}}\",\n  \"startAt\": \"2026-10-20T14:00:00.000Z\",\n  \"endAt\": \"2026-10-20T15:00:00.000Z\"\n}"
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{subjectId}}\",\n  \"startAt\": \"{{startAt}}\",\n  \"endAt\": \"{{endAt}}\"\n}"
             },
             "description": "Solo rol `student` (hagan login como estudiante antes). El tutor debe dictar la materia y no tener otra reserva activa que se cruce (`409`). Las fechas deben ser futuras y `endAt` posterior a `startAt`. El script guarda el `id` en `{{bookingId}}`.",
             "header": [
@@ -940,7 +940,1853 @@
       "name": "Booking"
     },
     {
-      "description": "Carga datos iniciales (admin, materias, tutores, estudiantes). Borra booking, tutor_profile, subject y user en ese orden.",
+      "description": "Una reseña por reserva COMPLETED, solo del estudiante dueño. Antes: completar la reserva como tutor y volver a iniciar sesión como ese estudiante. Usa {{bookingId}} y {{tutorProfileId}}.",
+      "item": [
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+                  "});",
+                  "const res = pm.response.json();",
+                  "if (res.id) {",
+                  "  pm.collectionVariables.set('reviewId', res.id);",
+                  "  console.log('Reseña guardada en {{reviewId}}: ' + res.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "review-create",
+          "name": "Crear reseña (student dueño)",
+          "request": {
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 5,\n  \"comment\": \"Explica muy claro y es puntual.\"\n}"
+            },
+            "description": "Solo el estudiante dueño de una reserva COMPLETED (inicien sesión con ese usuario). rating va de 1 a 5 y comment de 3 a 500 caracteres. Si la reserva no está COMPLETED responde 400; si no es suya, 403; si no existe, 404; si ya tiene reseña, 409. El script guarda el id en {{reviewId}}.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            }
+          },
+          "response": []
+        },
+        {
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('respuesta esperada', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const res = pm.response.json();",
+                  "  pm.expect(res).to.have.property('average');",
+                  "  pm.expect(res).to.have.property('count');",
+                  "  pm.expect(res).to.have.property('reviews');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "id": "review-by-tutor",
+          "name": "Listar reseñas de un tutor",
+          "request": {
+            "description": "Cualquier sesión. tutorId es el UUID del perfil ({{tutorProfileId}}), no el del usuario. Devuelve average, count y reviews.",
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review",
+                "tutor",
+                ":tutorId"
+              ],
+              "raw": "{{baseUrl}}/review/tutor/:tutorId",
+              "variable": [
+                {
+                  "description": "UUID del perfil de tutor",
+                  "key": "tutorId",
+                  "value": "{{tutorProfileId}}"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ],
+      "name": "Review"
+    },
+    {
+      "name": "Escenarios",
+      "description": "Correr después de Seed. Cubre los rechazos del marketplace: horario, rol, materia que el tutor no dicta, reseña antes de completar, reseña ajena, reseña duplicada, promedio y cancelación. Las fechas salen del pre-request de la colección, así no se vencen.",
+      "item": [
+        {
+          "name": "Entrar como Ana (estudiante)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.token).to.be.a('string');",
+                  "  pm.collectionVariables.set('token', body.token);",
+                  "  pm.collectionVariables.set('studentToken', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"Secreta123\"\n}"
+            },
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "auth"
+              ],
+              "raw": "{{baseUrl}}/user/auth"
+            },
+            "description": "Entra como ana@example.com y guarda el JWT en {{token}} y {{studentToken}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Buscar Cálculo en ICESI",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const calculo = pm.response.json().find((s) => s.name === 'Cálculo I');",
+                  "  pm.expect(calculo).to.be.an('object');",
+                  "  pm.collectionVariables.set('calculoId', calculo.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject"
+              ],
+              "raw": "{{baseUrl}}/subject?university=icesi&search=cálculo&limit=10&skip=0",
+              "query": [
+                {
+                  "key": "university",
+                  "value": "icesi"
+                },
+                {
+                  "key": "search",
+                  "value": "cálculo"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "El estudiante filtra por universidad y nombre de materia, sin importar mayúsculas."
+          },
+          "response": []
+        },
+        {
+          "name": "Guardar Programación I",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const subject = pm.response.json().find((s) => s.name === 'Programación I');",
+                  "  pm.expect(subject).to.be.an('object');",
+                  "  pm.collectionVariables.set('programacionId', subject.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject"
+              ],
+              "raw": "{{baseUrl}}/subject?search=Programación&limit=10&skip=0",
+              "query": [
+                {
+                  "key": "search",
+                  "value": "Programación"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Programación I la dicta tutor2, no tutor1. Sirve para el rechazo de materia."
+          },
+          "response": []
+        },
+        {
+          "name": "Filtrar tutores por tarifa y verificación",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const tutors = pm.response.json();",
+                  "  const tutor = tutors.find((t) => t.user && t.user.email === 'tutor1@example.com');",
+                  "  pm.expect(tutor).to.be.an('object');",
+                  "  pm.expect(tutor.hourlyRate).to.be.at.most(16000);",
+                  "  pm.expect(tutor.isVerified).to.eql(true);",
+                  "  pm.expect(tutors.some((t) => t.hourlyRate > 16000)).to.eql(false);",
+                  "  pm.collectionVariables.set('tutorProfileId', tutor.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tutor"
+              ],
+              "raw": "{{baseUrl}}/tutor?university=ICESI&maxRate=16000&verified=true&limit=10&skip=0",
+              "query": [
+                {
+                  "key": "university",
+                  "value": "ICESI"
+                },
+                {
+                  "key": "maxRate",
+                  "value": "16000"
+                },
+                {
+                  "key": "verified",
+                  "value": "true"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "Tutor1 cobra 15000 y está verificado. Tutor2 cobra 18000 y no debe salir."
+          },
+          "response": []
+        },
+        {
+          "name": "Reservar en el pasado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  const body = pm.response.json();",
+                  "  const text = Array.isArray(body.message) ? body.message.join(' ') : String(body.message);",
+                  "  pm.expect(text).to.include(\"startAt must be in the future\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "Una sesión que ya empezó no se puede agendar.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{pastStart}}\",\n  \"endAt\": \"{{pastEnd}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reservar con el fin antes del inicio",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  const body = pm.response.json();",
+                  "  const text = Array.isArray(body.message) ? body.message.join(' ') : String(body.message);",
+                  "  pm.expect(text).to.include(\"endAt must be after startAt\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{endAt}}\",\n  \"endAt\": \"{{startAt}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Entrar como tutor1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.token).to.be.a('string');",
+                  "  pm.collectionVariables.set('token', body.token);",
+                  "  pm.collectionVariables.set('tutorToken', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"tutor1@example.com\",\n  \"password\": \"Secreta123\"\n}"
+            },
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "auth"
+              ],
+              "raw": "{{baseUrl}}/user/auth"
+            },
+            "description": "Entra como tutor1@example.com y guarda el JWT en {{token}} y {{tutorToken}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Un tutor no puede reservar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "El rol tutor no crea reservas. Solo student.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{startAt}}\",\n  \"endAt\": \"{{endAt}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Volver a entrar como Ana",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.token).to.be.a('string');",
+                  "  pm.collectionVariables.set('token', body.token);",
+                  "  pm.collectionVariables.set('studentToken', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"Secreta123\"\n}"
+            },
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "auth"
+              ],
+              "raw": "{{baseUrl}}/user/auth"
+            },
+            "description": "Entra como ana@example.com y guarda el JWT en {{token}} y {{studentToken}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Reservar una materia que el tutor no dicta",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  const body = pm.response.json();",
+                  "  const text = Array.isArray(body.message) ? body.message.join(' ') : String(body.message);",
+                  "  pm.expect(text).to.include(\"The tutor does not teach this subject\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{programacionId}}\",\n  \"startAt\": \"{{startAtLater}}\",\n  \"endAt\": \"{{endAtLater}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reservar Cálculo con tutor1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.status).to.eql('PENDING');",
+                  "  pm.collectionVariables.set('bookingId', body.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "Guarda {{bookingId}} para confirmar, completar y reseñar.",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{startAt}}\",\n  \"endAt\": \"{{endAt}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Rechazar el mismo horario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(409);",
+                  "  const body = pm.response.json();",
+                  "  const text = Array.isArray(body.message) ? body.message.join(' ') : String(body.message);",
+                  "  pm.expect(text).to.include(\"The tutor already has an active booking in that time range\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{startAt}}\",\n  \"endAt\": \"{{endAt}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reservar sin token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{startAtLater}}\",\n  \"endAt\": \"{{endAtLater}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Ana no puede confirmar su reserva",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}",
+                "confirm"
+              ],
+              "raw": "{{baseUrl}}/booking/{{bookingId}}/confirm"
+            },
+            "description": "Confirmar es del tutor dueño."
+          },
+          "response": []
+        },
+        {
+          "name": "Entrar como tutor1 para confirmar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.token).to.be.a('string');",
+                  "  pm.collectionVariables.set('token', body.token);",
+                  "  pm.collectionVariables.set('tutorToken', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"tutor1@example.com\",\n  \"password\": \"Secreta123\"\n}"
+            },
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "auth"
+              ],
+              "raw": "{{baseUrl}}/user/auth"
+            },
+            "description": "Entra como tutor1@example.com y guarda el JWT en {{token}} y {{tutorToken}}."
+          },
+          "response": []
+        },
+        {
+          "name": "El tutor confirma",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('CONFIRMED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}",
+                "confirm"
+              ],
+              "raw": "{{baseUrl}}/booking/{{bookingId}}/confirm"
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Ana intenta reseñar antes de completar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.token).to.be.a('string');",
+                  "  pm.collectionVariables.set('token', body.token);",
+                  "  pm.collectionVariables.set('studentToken', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"Secreta123\"\n}"
+            },
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "auth"
+              ],
+              "raw": "{{baseUrl}}/user/auth"
+            },
+            "description": "Entra como ana@example.com y guarda el JWT en {{token}} y {{studentToken}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Reseñar una reserva que no terminó",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  const body = pm.response.json();",
+                  "  const text = Array.isArray(body.message) ? body.message.join(' ') : String(body.message);",
+                  "  pm.expect(text).to.include(\"Only COMPLETED bookings can be reviewed\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 5,\n  \"comment\": \"Todav\\u00eda no termina.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Ana no puede marcar la reserva como completada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}",
+                "complete"
+              ],
+              "raw": "{{baseUrl}}/booking/{{bookingId}}/complete"
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "El tutor completa la sesión",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.token).to.be.a('string');",
+                  "  pm.collectionVariables.set('token', body.token);",
+                  "  pm.collectionVariables.set('tutorToken', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"tutor1@example.com\",\n  \"password\": \"Secreta123\"\n}"
+            },
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "auth"
+              ],
+              "raw": "{{baseUrl}}/user/auth"
+            },
+            "description": "Entra como tutor1@example.com y guarda el JWT en {{token}} y {{tutorToken}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Completar la reserva",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('COMPLETED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}",
+                "complete"
+              ],
+              "raw": "{{baseUrl}}/booking/{{bookingId}}/complete"
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "El tutor no puede reseñar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 5,\n  \"comment\": \"No me rese\\u00f1o.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Entrar como Luis",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.token).to.be.a('string');",
+                  "  pm.collectionVariables.set('token', body.token);",
+                  "  pm.collectionVariables.set('luisToken', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"luis@example.com\",\n  \"password\": \"Secreta123\"\n}"
+            },
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "auth"
+              ],
+              "raw": "{{baseUrl}}/user/auth"
+            },
+            "description": "Entra como luis@example.com y guarda el JWT en {{token}} y {{luisToken}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Luis no puede reseñar la reserva de Ana",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(403);",
+                  "  const body = pm.response.json();",
+                  "  const text = Array.isArray(body.message) ? body.message.join(' ') : String(body.message);",
+                  "  pm.expect(text).to.include(\"You can only review your own bookings\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 4,\n  \"comment\": \"No es mi sesi\\u00f3n.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Ana reseña su sesión",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.token).to.be.a('string');",
+                  "  pm.collectionVariables.set('token', body.token);",
+                  "  pm.collectionVariables.set('studentToken', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"Secreta123\"\n}"
+            },
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "auth"
+              ],
+              "raw": "{{baseUrl}}/user/auth"
+            },
+            "description": "Entra como ana@example.com y guarda el JWT en {{token}} y {{studentToken}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Nota fuera de 1 a 5",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 9,\n  \"comment\": \"Nota inv\\u00e1lida.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Crear la reseña",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.rating).to.eql(5);",
+                  "  pm.collectionVariables.set('reviewId', body.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 5,\n  \"comment\": \"Explica el parcial con ejercicios de ICESI.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "No se puede reseñar dos veces",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(409);",
+                  "  const body = pm.response.json();",
+                  "  const text = Array.isArray(body.message) ? body.message.join(' ') : String(body.message);",
+                  "  pm.expect(text).to.include(\"This booking already has a review\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 4,\n  \"comment\": \"Segunda opini\\u00f3n.\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Ver el promedio sin token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review",
+                "tutor",
+                "{{tutorProfileId}}"
+              ],
+              "raw": "{{baseUrl}}/review/tutor/{{tutorProfileId}}"
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Ver promedio del tutor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.count).to.eql(1);",
+                  "  pm.expect(body.average).to.eql(5);",
+                  "  pm.expect(body.reviews).to.have.lengthOf(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review",
+                "tutor",
+                "{{tutorProfileId}}"
+              ],
+              "raw": "{{baseUrl}}/review/tutor/{{tutorProfileId}}"
+            },
+            "description": "Cualquier sesión autenticada ve el promedio. Luis ya no tiene el token; este request usa el de Ana."
+          },
+          "response": []
+        },
+        {
+          "name": "Ana reserva otro horario",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.collectionVariables.set('secondBookingId', pm.response.json().id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{startAtLater}}\",\n  \"endAt\": \"{{endAtLater}}\"\n}"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "El tutor cancela la segunda reserva",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.token).to.be.a('string');",
+                  "  pm.collectionVariables.set('token', body.token);",
+                  "  pm.collectionVariables.set('tutorToken', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"tutor1@example.com\",\n  \"password\": \"Secreta123\"\n}"
+            },
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "auth"
+              ],
+              "raw": "{{baseUrl}}/user/auth"
+            },
+            "description": "Entra como tutor1@example.com y guarda el JWT en {{token}} y {{tutorToken}}."
+          },
+          "response": []
+        },
+        {
+          "name": "No se puede completar una reserva PENDING",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  const body = pm.response.json();",
+                  "  const text = Array.isArray(body.message) ? body.message.join(' ') : String(body.message);",
+                  "  pm.expect(text).to.include(\"Only CONFIRMED bookings can be completed\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{secondBookingId}}",
+                "complete"
+              ],
+              "raw": "{{baseUrl}}/booking/{{secondBookingId}}/complete"
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "El tutor cancela",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(pm.response.json().status).to.eql('CANCELLED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{secondBookingId}}",
+                "cancel"
+              ],
+              "raw": "{{baseUrl}}/booking/{{secondBookingId}}/cancel"
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Ana no puede cancelar la sesión ya terminada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login', function () {",
+                  "  pm.response.to.have.status(201);",
+                  "  const body = pm.response.json();",
+                  "  pm.expect(body.token).to.be.a('string');",
+                  "  pm.collectionVariables.set('token', body.token);",
+                  "  pm.collectionVariables.set('studentToken', body.token);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"ana@example.com\",\n  \"password\": \"Secreta123\"\n}"
+            },
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "auth"
+              ],
+              "raw": "{{baseUrl}}/user/auth"
+            },
+            "description": "Entra como ana@example.com y guarda el JWT en {{token}} y {{studentToken}}."
+          },
+          "response": []
+        },
+        {
+          "name": "Cancelar una reserva COMPLETED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  const body = pm.response.json();",
+                  "  const text = Array.isArray(body.message) ? body.message.join(' ') : String(body.message);",
+                  "  pm.expect(text).to.include(\"Only PENDING or CONFIRMED bookings can be cancelled\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}",
+                "cancel"
+              ],
+              "raw": "{{baseUrl}}/booking/{{bookingId}}/cancel"
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Ver solo mis reservas completadas",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(200);",
+                  "  const ids = pm.response.json().map((b) => b.id);",
+                  "  pm.expect(ids).to.include(pm.collectionVariables.get('bookingId'));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "mine"
+              ],
+              "raw": "{{baseUrl}}/booking/mine?status=COMPLETED&limit=10&skip=0",
+              "query": [
+                {
+                  "key": "status",
+                  "value": "COMPLETED"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Un estudiante no lista usuarios",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('escenario', function () {",
+                  "  pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user"
+              ],
+              "raw": "{{baseUrl}}/user?limit=10&skip=0",
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "description": "Carga datos iniciales (admin, materias, tutores, estudiantes). Borra review, booking, tutor_profile, subject y user en ese orden.",
       "item": [
         {
           "id": "seed-run",
@@ -949,7 +2795,7 @@
             "auth": {
               "type": "noauth"
             },
-            "description": "Borra y recarga todo. `key` debe coincidir con `SEED_KEY` del `.env` (si no, `401`). Úsenlo solo en su base local.",
+            "description": "Borra y recarga la base de Render. `key` debe coincidir con `SEED_KEY` de ese servicio (si no, `401`).",
             "method": "GET",
             "url": {
               "host": [
@@ -960,7 +2806,7 @@
               ],
               "query": [
                 {
-                  "description": "Debe coincidir con SEED_KEY del .env",
+                  "description": "Debe coincidir con SEED_KEY del servicio en Render",
                   "key": "key",
                   "value": "{{seedKey}}"
                 }
@@ -978,7 +2824,8 @@
     {
       "key": "baseUrl",
       "type": "string",
-      "value": "http://localhost:9000/tutorlink"
+      "value": "https://compu3-tallernest-tutorlink.onrender.com/tutorlink",
+      "description": "API desplegada en Render."
     },
     {
       "key": "userEmail",
@@ -1023,10 +2870,107 @@
       "description": "UUID de la última reserva. Lo llena Crear reserva"
     },
     {
+      "key": "reviewId",
+      "type": "string",
+      "value": "",
+      "description": "UUID de la última reseña. Lo llena Crear reseña"
+    },
+    {
       "key": "seedKey",
       "type": "string",
       "value": "mi-clave-seed",
-      "description": "Debe coincidir con SEED_KEY del .env"
+      "description": "Debe coincidir con SEED_KEY del servicio en Render"
+    },
+    {
+      "key": "calculoId",
+      "type": "string",
+      "value": "",
+      "description": "UUID de Cálculo I. Lo llena Escenarios"
+    },
+    {
+      "key": "programacionId",
+      "type": "string",
+      "value": "",
+      "description": "UUID de Programación I. Lo llena Escenarios"
+    },
+    {
+      "key": "secondBookingId",
+      "type": "string",
+      "value": "",
+      "description": "Segunda reserva, la que se cancela"
+    },
+    {
+      "key": "studentToken",
+      "type": "string",
+      "value": "",
+      "description": "JWT de Ana"
+    },
+    {
+      "key": "tutorToken",
+      "type": "string",
+      "value": "",
+      "description": "JWT de tutor1"
+    },
+    {
+      "key": "luisToken",
+      "type": "string",
+      "value": "",
+      "description": "JWT de Luis"
+    },
+    {
+      "key": "startAt",
+      "type": "string",
+      "value": "",
+      "description": "Inicio de la sesión, lo calcula el pre-request"
+    },
+    {
+      "key": "endAt",
+      "type": "string",
+      "value": "",
+      "description": "Fin de la sesión, una hora después de startAt"
+    },
+    {
+      "key": "startAtLater",
+      "type": "string",
+      "value": "",
+      "description": "Otro horario, sin cruce"
+    },
+    {
+      "key": "endAtLater",
+      "type": "string",
+      "value": "",
+      "description": "Fin del otro horario"
+    },
+    {
+      "key": "pastStart",
+      "type": "string",
+      "value": "",
+      "description": "Fecha pasada, para el rechazo"
+    },
+    {
+      "key": "pastEnd",
+      "type": "string",
+      "value": "",
+      "description": "Fin de la fecha pasada"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const hour = 3600 * 1000;",
+          "const start = new Date(Date.now() + 48 * hour);",
+          "const later = new Date(Date.now() + 80 * hour);",
+          "pm.collectionVariables.set('startAt', start.toISOString());",
+          "pm.collectionVariables.set('endAt', new Date(start.getTime() + hour).toISOString());",
+          "pm.collectionVariables.set('startAtLater', later.toISOString());",
+          "pm.collectionVariables.set('endAtLater', new Date(later.getTime() + hour).toISOString());",
+          "pm.collectionVariables.set('pastStart', new Date(Date.now() - 2 * hour).toISOString());",
+          "pm.collectionVariables.set('pastEnd', new Date(Date.now() - hour).toISOString());"
+        ]
+      }
     }
   ]
 }
