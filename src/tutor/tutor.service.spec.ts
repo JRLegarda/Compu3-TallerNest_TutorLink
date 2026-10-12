@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { ConflictException, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
@@ -150,5 +150,26 @@ describe('TutorService', () => {
     tutorRepo.save.mockRejectedValue({ code: '23505', detail: 'duplicated' });
 
     await expect(service.upsertMyProfile(tutorUser, dto)).rejects.toThrow(ConflictException);
+  });
+
+  it('maps an unexpected error while saving the profile', async () => {
+    tutorRepo.findOne.mockResolvedValue(null);
+    subjectRepo.find.mockResolvedValue(subjects);
+    tutorRepo.create.mockReturnValue({});
+    tutorRepo.save.mockRejectedValue(new Error('db down'));
+
+    await expect(service.upsertMyProfile(tutorUser, dto)).rejects.toThrow(
+      InternalServerErrorException,
+    );
+  });
+
+  it('lists tutors without applying optional filters', async () => {
+    const qb = queryBuilderMock([]);
+    tutorRepo.createQueryBuilder.mockReturnValue(qb);
+
+    await service.findAll({} as any);
+
+    expect(qb.andWhere).not.toHaveBeenCalled();
+    expect(qb.orderBy).toHaveBeenCalledWith('tutor.hourlyRate', 'ASC');
   });
 });
