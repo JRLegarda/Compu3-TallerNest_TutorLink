@@ -5,11 +5,20 @@ Backend del taller de Computación en Internet III (NestJS + PostgreSQL). TutorL
 **Equipo:** Miguel Pérez, Johan Suarez, Juan Sebastián Rodríguez Legarda
 **Entrega del taller:** 13 de octubre de 2026
 
-La API escucha en el puerto **9000** con el prefijo global `tutorlink`. La documentación interactiva (Swagger UI) está en **`http://localhost:9000/docs`**. Un usuario nuevo entra siempre como `student`. Los roles son `student`, `tutor` y `admin`.
+La API escucha en el puerto **9000** con el prefijo global `tutorlink`. En local, Swagger está en **`http://localhost:9000/docs`**.
+
+La aplicación desplegada está en Render:
+
+- API: `https://compu3-tallernest-tutorlink.onrender.com/tutorlink`
+- Swagger: `https://compu3-tallernest-tutorlink.onrender.com/docs`
+
+Si el servicio estuvo un rato sin tráfico, la primera petición puede tardar mientras Render lo despierta. Un usuario nuevo entra siempre como `student`. Los roles son `student`, `tutor` y `admin`.
+
+El informe del taller, con cada endpoint, la autenticación, la autorización, la persistencia y las pruebas, está en [`docs/Informe-TutorLink.docx`](docs/Informe-TutorLink.docx).
 
 ## Qué ya está hecho
 
-Persistencia con TypeORM contra PostgreSQL y cuatro módulos funcionales: usuarios, materias, tutores y reservas. Más seed, Swagger, colección Postman, pruebas de tutores/reservas y un workflow de CI.
+Persistencia con TypeORM contra PostgreSQL y los módulos de usuarios, materias, tutores, reservas y reseñas. Más seed, Swagger, colección Postman, pruebas unitarias por encima del 80 % de cobertura y el despliegue en Render.
 
 ### Usuarios (`user`)
 
@@ -74,9 +83,20 @@ Reglas:
 - Las fechas deben ser futuras y `endAt` posterior a `startAt`.
 - Solo el dueño de la reserva la modifica (si no, 403).
 
+### Reseñas (`review`)
+
+Solo se puede reseñar una reserva `COMPLETED` propia. Una reseña por reserva.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| POST | `/tutorlink/review` | Student dueño. Body: `bookingId`, `rating` (1 a 5), `comment`. |
+| GET | `/tutorlink/review/tutor/:tutorId` | Autenticado. Devuelve `average`, `count` y `reviews`. |
+
+Si la reserva no está `COMPLETED`, responde 400. Si no es del estudiante, 403. Si ya tiene reseña, 409. Si no existe, 404.
+
 ### Seed
 
-`GET /tutorlink/seed?key=SEED_KEY`. Borra en orden `booking`, `tutor_profile`, `subject`, `user` y carga el admin (de `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_FULL_NAME`), 4 materias, 2 tutores verificados y 2 estudiantes. Sin la clave correcta responde 401. Las contraseñas se hashean con `UserService.encryptPassword`, el mismo método del registro.
+`GET /tutorlink/seed?key=SEED_KEY`. Borra en orden `review`, `booking`, `tutor_profile_subjects`, `tutor_profile`, `subject` y `user`, y carga el admin (de `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_FULL_NAME`), 4 materias, 2 tutores verificados y 2 estudiantes. Sin la clave correcta responde 401. Las contraseñas se hashean con `UserService.encryptPassword`, el mismo método del registro. La respuesta es `{ "message": "SEED EXECUTED", "admin", "subjects", "students", "tutors" }`.
 
 Credenciales de prueba (todas con `Secreta123`, salvo el admin): `tutor1@example.com`, `tutor2@example.com`, `ana@example.com`, `luis@example.com`.
 
@@ -88,11 +108,13 @@ Credenciales de prueba (todas con `Secreta123`, salvo el admin): `tutor1@example
 
 ### Postman
 
-Colección en `postman/TutorLink.postman_collection.json`, con variables `baseUrl` (`http://localhost:9000/tutorlink`) y `token` (se guarda solo al registrarse o iniciar sesión). Cubre usuarios, materias, tutores, reservas y seed. Para los flujos con otro rol, basta iniciar sesión con ese usuario (el token se sobrescribe).
+Colección en `postman/TutorLink.postman_collection.json`, con variables `baseUrl` (`http://localhost:9000/tutorlink`) y `token` (se guarda solo al registrarse o iniciar sesión). Cubre usuarios, materias, tutores, reservas, reseñas y seed. Para los flujos con otro rol, basta iniciar sesión con ese usuario (el token se sobrescribe).
 
 ### Pruebas
 
-Hay pruebas unitarias (Vitest, sin base de datos) de usuarios, materias, tutores y reservas, y pruebas de integración (Supertest, con base de datos). Un workflow de GitHub Actions (`.github/workflows/tests.yml`) instala, compila y corre las unitarias en cada push y en cada pull request.
+Hay pruebas unitarias (Vitest, sin base de datos) de usuarios, materias, tutores, reservas, reseñas y seed, y pruebas de integración (Supertest, con base de datos). Un workflow de GitHub Actions (`.github/workflows/tests.yml`) corre en cada push y en cada pull request a `main`. El job `unit` instala, compila, pasa el linter y corre las unitarias con cobertura. El job `e2e` levanta PostgreSQL 14.3 y corre `npm run test:e2e` con `RUN_E2E=true`. Si ambos pasan en un push a `main`, otro job avisa a Render para que vuelva a desplegar.
+
+`npm run test:cov` exige al menos 80 % de líneas, funciones, branches y statements. La medición actual queda por encima: líneas 90,98 %, statements 90,05 %, funciones 82,69 % y branches 82,58 % (80 pruebas, 15 archivos).
 
 | Qué | Cómo se corre |
 |---|---|
@@ -156,7 +178,7 @@ Solo en la base local, y solo cuando la API ya está arriba:
 curl "http://localhost:9000/tutorlink/seed?key=una_clave_para_el_seed"
 ```
 
-Debe responder `SEED EXECUTED`. La misma petición está en la carpeta Seed de Postman. Vuelve a borrar y recargar usuarios, materias, tutores y reservas.
+Debe responder `SEED EXECUTED`. La misma petición está en la carpeta Seed de Postman. Vuelve a borrar y recargar usuarios, materias, tutores, reservas y reseñas.
 
 ### 5. Pruebas unitarias
 
@@ -174,7 +196,7 @@ npm run test:cov
 
 ### 6. Postman
 
-Importar `postman/TutorLink.postman_collection.json` en Postman. La colección ya trae `baseUrl` (`http://localhost:9000/tutorlink`). Al iniciar sesión, el script guarda el token. El orden sugerido está en la descripción de la colección: Seed, login de admin, materias, tutores y reservas.
+Importar `postman/TutorLink.postman_collection.json` en Postman. La colección ya trae `baseUrl` (`http://localhost:9000/tutorlink`). Al iniciar sesión, el script guarda el token. El orden sugerido está en la descripción de la colección: Seed, login de admin, materias, tutores, reservas y, con la reserva ya en `COMPLETED`, la reseña del estudiante.
 
 ### 7. Probar un flujo a mano
 
@@ -186,7 +208,7 @@ curl "http://localhost:9000/tutorlink/seed?key=una_clave_para_el_seed"
 
 Debe responder `SEED EXECUTED`. La misma petición está en la carpeta Seed de Postman.
 
-4. Probar cada funcionalidad, en orden:
+Probar cada funcionalidad, en orden:
 
 ```bash
 # 1. Entrar como admin (token de la respuesta -> Authorization: Bearer <token>)
@@ -228,29 +250,27 @@ curl -X PATCH http://localhost:9000/tutorlink/booking/<id_reserva>/confirm \
   -H "Authorization: Bearer <token_tutor>"
 curl -X PATCH http://localhost:9000/tutorlink/booking/<id_reserva>/complete \
   -H "Authorization: Bearer <token_tutor>"
+
+# 8. Reseñar (con el token del estudiante dueño de esa reserva)
+curl -X POST http://localhost:9000/tutorlink/review \
+  -H "Authorization: Bearer <token_estudiante>" -H "Content-Type: application/json" \
+  -d '{ "bookingId": "<id_reserva>", "rating": 5, "comment": "Explica muy claro y es puntual." }'
 ```
 
-Ese mismo flujo está en Swagger y en la colección de Postman.
+Ese mismo flujo está en Swagger y en la colección de Postman (usuarios, materias, tutores, reservas, reseñas y seed).
 
-## Qué falta
+## Despliegue
 
-### Reseñas (`review`, opcional)
+La API pública está en Render:
 
-Solo se puede reseñar una reserva `COMPLETED` propia. Una reseña por reserva. El módulo, controller y service existen en esqueleto (`src/review/`).
+- Aplicación: [https://compu3-tallernest-tutorlink.onrender.com](https://compu3-tallernest-tutorlink.onrender.com)
+- API: `https://compu3-tallernest-tutorlink.onrender.com/tutorlink`
+- Swagger: [https://compu3-tallernest-tutorlink.onrender.com/docs](https://compu3-tallernest-tutorlink.onrender.com/docs)
+- Repositorio: [https://github.com/JRLegarda/Compu3-TallerNest_TutorLink](https://github.com/JRLegarda/Compu3-TallerNest_TutorLink)
 
-### Cobertura global
+El servicio usa el `Dockerfile` del repo (Node 22, `node dist/main.js`). Las variables de base de datos, JWT, admin y `SEED_KEY` están en Render, no en git. Un push a `main` que pase las unitarias y las de integración dispara el deploy hook. Para probar esa instancia con Postman, cambia `baseUrl` a `https://compu3-tallernest-tutorlink.onrender.com/tutorlink`. El seed de producción borra la base de ese entorno.
 
-La consigna pide al menos **80%** de cobertura de todo el código. Usuarios y materias ya tienen pruebas de servicio, controller, guard y JWT. Tutores y reservas tienen pruebas de servicio. Sigue faltando cubrir seed, reseñas y los controllers de tutor y booking para llegar a ese 80% sobre todo `src`. Se mide con `npm run test:cov`.
-
-### Despliegue
-
-- Desplegar la API en un servicio en la nube.
-- Un pipeline que pruebe y despliegue (hoy el workflow solo instala, compila y corre unitarias).
-- En el informe de la entrega: URL del repositorio, URL de la app y cómo se probaron los endpoints.
-
-### Informe
-
-Documento para la tarea de Intu. Describe cada endpoint (parámetros y respuestas) y explica autenticación, autorización y persistencia. No reemplaza este README.
+El detalle de endpoints, autenticación, autorización, persistencia y pruebas está en [`docs/Informe-TutorLink.docx`](docs/Informe-TutorLink.docx). Ese archivo es el que se adjunta en Intu. Este README queda para clonar el proyecto y correrlo.
 
 ## Estructura de carpetas
 
@@ -328,7 +348,9 @@ Compu3-TallerNest_TutorLink/
 │   ├── review/
 │   │   ├── review.module.ts
 │   │   ├── review.controller.ts
+│   │   ├── review.controller.spec.ts
 │   │   ├── review.service.ts
+│   │   ├── review.service.spec.ts
 │   │   ├── dto/
 │   │   │   └── create-review.ts
 │   │   └── entities/
@@ -346,9 +368,7 @@ Compu3-TallerNest_TutorLink/
 ├── postman/
 │   └── TutorLink.postman_collection.json
 ├── docs/
-│   ├── sesion-tutor-booking.md
-│   ├── Enunciado.pdf
-│   └── ...
+│   └── Informe-TutorLink.docx
 ├── .github/workflows/
 │   └── tests.yml
 ├── .dockerignore
