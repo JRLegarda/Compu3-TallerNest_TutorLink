@@ -47,6 +47,7 @@ jobs:
           --health-retries 10
     env:
       RUN_E2E: true
+      DB_SYNCHRONIZE: true
       DB_HOST: localhost
       DB_PORT: 5432
       DB_NAME: tutorlink
