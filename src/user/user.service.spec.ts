@@ -51,7 +51,14 @@ describe('UserService', () => {
         { provide: getRepositoryToken(User), useValue: userRepo },
         { provide: JwtService, useValue: jwtService },
       ],
-    }).compile();
+    }).setLogger({
+      log: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+      verbose: vi.fn(),
+    })
+    .compile();
 
     service = module.get(UserService);
   });

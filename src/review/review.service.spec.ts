@@ -53,7 +53,14 @@ describe('ReviewService', () => {
         { provide: getRepositoryToken(Review), useValue: reviewRepo },
         { provide: getRepositoryToken(Booking), useValue: bookingRepo },
       ],
-    }).compile();
+    }).setLogger({
+      log: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+      verbose: vi.fn(),
+    })
+    .compile();
 
     service = module.get(ReviewService);
   });

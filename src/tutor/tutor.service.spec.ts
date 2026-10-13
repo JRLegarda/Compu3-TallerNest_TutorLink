@@ -58,7 +58,14 @@ describe('TutorService', () => {
         { provide: getRepositoryToken(TutorProfile), useValue: tutorRepo },
         { provide: getRepositoryToken(Subject), useValue: subjectRepo },
       ],
-    }).compile();
+    }).setLogger({
+      log: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+      verbose: vi.fn(),
+    })
+    .compile();
 
     service = module.get<TutorService>(TutorService);
   });
