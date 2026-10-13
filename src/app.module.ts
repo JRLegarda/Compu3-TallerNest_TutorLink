@@ -20,6 +20,9 @@ import { SeedModule } from './seed/seed.module.js';
       password: process.env.DB_PASSWORD,
       autoLoadEntities: true,
       synchronize: process.env.DB_SYNCHRONIZE === 'true', // Solo en desarrollo, no usar en producción
+      migrationsRun: process.env.DB_MIGRATIONS_RUN === 'true',
+      migrations: [__dirname + '/migrations/*{.ts,.js}'],
+
     }),
     UserModule,
     SubjectModule,
