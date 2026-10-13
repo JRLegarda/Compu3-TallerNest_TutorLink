@@ -44,7 +44,15 @@ describe('SubjectService', () => {
         SubjectService,
         { provide: getRepositoryToken(Subject), useValue: subjectRepo },
       ],
-    }).compile();
+    })
+    .setLogger({
+      log: vi.fn(),
+      error: vi.fn(),
+      warn: vi.fn(),
+      debug: vi.fn(),
+      verbose: vi.fn(),
+    })
+    .compile();
 
     service = module.get(SubjectService);
   });
