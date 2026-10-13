@@ -19,7 +19,7 @@ import { SeedModule } from './seed/seed.module.js';
       username: process.env.DB_USERNAME,
       password: process.env.DB_PASSWORD,
       autoLoadEntities: true,
-      synchronize: true, // Solo en desarrollo, no usar en producción
+      synchronize: process.env.DB_SYNCHRONIZE === 'true', // Solo en desarrollo, no usar en producción
     }),
     UserModule,
     SubjectModule,

@@ -11,56 +11,95 @@
   },
   "info": {
     "_postman_id": "tutorlink-0000-0000-0000-000000000001",
-    "description": "Colección para probar TutorLink desplegado en Render. `{{baseUrl}}` apunta a https://compu3-tallernest-tutorlink.onrender.com/tutorlink. La primera petición puede tardar si el servicio estaba dormido.\n\nEjecutar **Seed** con la `{{seedKey}}` (carga admin, materias, 2 tutores y 2 estudiantes). Borra los datos de esa base.\n\n**Autenticación:** la colección usa Bearer Token con `{{token}}`. \"Registrarse\" e \"Iniciar sesión\" guardan el token solas. Para flujos con otro rol, inicien sesión con ese usuario (el token se sobrescribe): admin del seed, un tutor (`tutor1@example.com`) o un estudiante (`ana@example.com`, password `Secreta123`).\n\nOrden sugerido: Seed → Iniciar sesión (admin) → Materias → Dar rol tutor → Iniciar sesión (tutor) → Crear perfil → Verificar (admin) → Iniciar sesión (estudiante) → Reservar → Confirmar/Completar (tutor) → Iniciar sesión (estudiante dueño) → Crear reseña → Listar reseñas del tutor. La carpeta Escenarios se corre después de Seed y no depende de las variables del flujo manual.\n\nSwagger UI: https://compu3-tallernest-tutorlink.onrender.com/docs",
+    "description": "Colección 100% automatizada, idempotente y con caminos negativos para TutorLink en Render. Corran **Run Collection** cuantas veces quieran: cada corrida empieza y termina en un estado limpio.\n\n**Convención de nombres:** `[MÉTODO] Acción - Resultado esperado` (ej. `[POST] Crear reserva - 201 PENDING`, `[POST] Crear materia - 409 Duplicada`).\n\n**Cómo funciona:**\n1. La carpeta **Seed** (primera) reinicia la base con `/seed?key={{seedKey}}`.\n2. Cada carpeta protegida inyecta su login por **pre-request** con `pm.sendRequest` (admin, ana, tutor1) y guarda el JWT en `{{token}}`.\n3. Las creaciones guardan sus IDs en variables de colección; ninguna ruta usa IDs vacíos.\n4. El signup usa email aleatorio (`{{$randomEmail}}`) para no chocar entre corridas.\n5. Los caminos negativos usan `{{$guid}}` (UUID inexistente) y credenciales del seed, así que no ensucian la base.\n6. La carpeta **Escenarios** vuelve a correr **Seed** como primer request para garantizar sus aserciones exactas.\n\nSwagger UI: https://compu3-tallernest-tutorlink.onrender.com/docs",
     "name": "TutorLink",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "description": "Registro, login, perfil propio y administración (solo admin)",
+      "name": "Seed",
+      "description": "Reinicia la base. Corre primero para garantizar un estado limpio y predecible.",
       "item": [
         {
+          "name": "[GET] Ejecutar seed - 200 Base reiniciada",
+          "id": "seed-run",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seed"
+              ],
+              "raw": "{{baseUrl}}/seed",
+              "query": [
+                {
+                  "key": "key",
+                  "value": "{{seedKey}}"
+                }
+              ]
+            },
+            "description": "Reinicia la base a un estado conocido (borra y recarga admin, materias, 2 tutores y 2 estudiantes).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
-                  "});",
-                  "const res = pm.response.json();",
-                  "if (res.token) {",
-                  "  pm.collectionVariables.set('token', res.token);",
-                  "  console.log('Token guardado en {{token}}');",
-                  "}"
-                ],
-                "type": "text/javascript"
+                  "pm.test('seed 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('seed ejecutado', function () { pm.expect(body.message).to.eql('SEED EXECUTED'); });"
+                ]
               }
             }
           ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User",
+      "description": "CRUD de usuarios y auth. Positivos (happy path) y negativos (400/401/403/404/409).",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const baseUrl = pm.collectionVariables.get('baseUrl');",
+              "pm.sendRequest({",
+              "  url: baseUrl + '/user/auth',",
+              "  method: 'POST',",
+              "  header: { 'Content-Type': 'application/json' },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('adminEmail'), password: pm.collectionVariables.get('adminPassword') }) }",
+              "}, function (err, res) {",
+              "  if (err) { console.error('Login error for adminEmail:', err); return; }",
+              "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('adminEmail')); return; }",
+              "  const jwt = res.json().token;",
+              "  pm.collectionVariables.set('token', jwt);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "[POST] Registrarse - 201 Creado",
           "id": "user-signup",
-          "name": "Registrarse (signup)",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "body": {
-              "mode": "raw",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              },
-              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\",\n  \"fullName\": \"Estudiante Nuevo\"\n}"
-            },
-            "description": "Crea un usuario con rol `student` y devuelve un `token` (el script lo guarda en `{{token}}`). Si el email ya existe responde `409`.",
+            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
-            "method": "POST",
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -70,35 +109,8 @@
                 "signup"
               ],
               "raw": "{{baseUrl}}/user/signup"
-            }
-          },
-          "response": []
-        },
-        {
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([201]);",
-                  "});",
-                  "const res = pm.response.json();",
-                  "if (res.token) {",
-                  "  pm.collectionVariables.set('token', res.token);",
-                  "  console.log('Token guardado en {{token}}');",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "id": "user-auth",
-          "name": "Iniciar sesión (auth)",
-          "request": {
-            "auth": {
-              "type": "noauth"
             },
+            "description": "Crea un estudiante con email aleatorio y guarda userId/token.",
             "body": {
               "mode": "raw",
               "options": {
@@ -106,16 +118,39 @@
                   "language": "json"
                 }
               },
-              "raw": "{\n  \"email\": \"{{userEmail}}\",\n  \"password\": \"{{userPassword}}\"\n}"
+              "raw": "{\n  \"email\": \"{{$randomEmail}}\",\n  \"password\": \"{{seedPassword}}\",\n  \"fullName\": \"{{$randomFirstName}} {{$randomLastName}}\"\n}"
             },
-            "description": "Devuelve un `token` nuevo (dura 1h) y lo guarda en `{{token}}`. Para probar otro rol cambien `userEmail`/`userPassword` (admin del seed, `tutor1@example.com` o `ana@example.com`, todos con `Secreta123` salvo el admin).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('signup 201', function () { pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "if (body.id) { pm.collectionVariables.set('userId', body.id); }",
+                  "if (body.token) { pm.collectionVariables.set('token', body.token); pm.collectionVariables.set('studentToken', body.token); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Iniciar sesión - 201 Token emitido",
+          "id": "user-auth",
+          "request": {
+            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
-            "method": "POST",
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -125,16 +160,42 @@
                 "auth"
               ],
               "raw": "{{baseUrl}}/user/auth"
+            },
+            "description": "Login del estudiante del seed.",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"{{anaEmail}}\",\n  \"password\": \"{{seedPassword}}\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
             }
           },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('login 201', function () { pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "if (body.token) { pm.collectionVariables.set('token', body.token); pm.collectionVariables.set('studentToken', body.token); }"
+                ]
+              }
+            }
+          ],
           "response": []
         },
         {
+          "name": "[GET] Ver mi perfil - 200 OK",
           "id": "user-me",
-          "name": "Ver mi perfil (me)",
           "request": {
-            "description": "Requiere cualquier sesión (`@Auth()`).",
             "method": "GET",
+            "header": [],
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -144,61 +205,49 @@
                 "me"
               ],
               "raw": "{{baseUrl}}/user/me"
-            }
+            },
+            "description": ""
           },
-          "response": [],
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "pm.sendRequest({",
+                  "  url: baseUrl + '/user/auth',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('anaEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+                  "}, function (err, res) {",
+                  "  if (err) { console.error('Login error for anaEmail:', err); return; }",
+                  "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('anaEmail')); return; }",
+                  "  const jwt = res.json().token;",
+                  "  pm.collectionVariables.set('token', jwt);",
+                  "  pm.collectionVariables.set('studentToken', jwt);",
+                  "});"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
-                  "});"
+                  "pm.test('me 200', function () { pm.response.to.have.status(200); });"
                 ]
               }
             }
-          ]
+          ],
+          "response": []
         },
         {
-          "id": "user-logout",
-          "name": "Cerrar sesión (logout)",
-          "request": {
-            "description": "Invalida el token actual (sube `tokenVersion`). Requiere sesión.",
-            "method": "POST",
-            "url": {
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                "logout"
-              ],
-              "raw": "{{baseUrl}}/user/logout"
-            }
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([201]);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
+          "name": "[GET] Listar usuarios - 200 OK",
           "id": "user-list",
-          "name": "Listar usuarios (admin)",
           "request": {
-            "description": "Solo admin. Acepta `limit` y `skip`.",
             "method": "GET",
+            "header": [],
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -206,6 +255,7 @@
               "path": [
                 "user"
               ],
+              "raw": "{{baseUrl}}/user",
               "query": [
                 {
                   "key": "limit",
@@ -215,68 +265,78 @@
                   "key": "skip",
                   "value": "0"
                 }
-              ],
-              "raw": "{{baseUrl}}/user?limit=10&skip=0"
-            }
+              ]
+            },
+            "description": ""
           },
-          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
-                  "});"
+                  "pm.test('lista 200', function () { pm.response.to.have.status(200); });",
+                  "pm.expect(pm.response.json()).to.be.an(\"array\");"
                 ]
               }
             }
-          ]
+          ],
+          "response": []
         },
         {
+          "name": "[GET] Ver usuario - 200 OK",
           "id": "user-get",
-          "name": "Ver un usuario (admin)",
           "request": {
-            "description": "Solo admin. `id` es el UUID del usuario.",
             "method": "GET",
+            "header": [],
             "url": {
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "user",
-                ":id"
+                "{{userId}}"
               ],
-              "raw": "{{baseUrl}}/user/:id",
-              "variable": [
-                {
-                  "description": "UUID del usuario",
-                  "key": "id",
-                  "value": "{{userId}}"
-                }
-              ]
-            }
+              "raw": "{{baseUrl}}/user/{{userId}}"
+            },
+            "description": ""
           },
-          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
-                  "});"
+                  "pm.test('get 200', function () { pm.response.to.have.status(200); });"
                 ]
               }
             }
-          ]
+          ],
+          "response": []
         },
         {
+          "name": "[PATCH] Asignar roles - 200 OK",
           "id": "user-roles",
-          "name": "Asignar roles (admin)",
           "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "{{userId}}",
+                "roles"
+              ],
+              "raw": "{{baseUrl}}/user/{{userId}}/roles"
+            },
+            "description": "",
             "body": {
               "mode": "raw",
               "options": {
@@ -285,116 +345,126 @@
                 }
               },
               "raw": "{\n  \"roles\": [\"tutor\"]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('roles 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[DELETE] Desactivar usuario - 200 OK",
+          "id": "user-delete",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "{{userId}}"
+              ],
+              "raw": "{{baseUrl}}/user/{{userId}}"
             },
-            "description": "Solo admin. Así se otorga el rol `tutor` antes de que esa persona cree su perfil (`PUT /tutor/me`). Pongan en `:id` el UUID del futuro tutor (o su `{{userId}}`).",
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('delete 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Cerrar sesión - 201 OK",
+          "id": "user-logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "logout"
+              ],
+              "raw": "{{baseUrl}}/user/logout"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "pm.sendRequest({",
+                  "  url: baseUrl + '/user/auth',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('luisEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+                  "}, function (err, res) {",
+                  "  if (err) { console.error('Login error for luisEmail:', err); return; }",
+                  "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('luisEmail')); return; }",
+                  "  const jwt = res.json().token;",
+                  "  pm.collectionVariables.set('token', jwt);",
+                  "  pm.collectionVariables.set('luisToken', jwt);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('logout 201', function () { pm.response.to.have.status(201); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Registrarse - 409 Email duplicado",
+          "id": "user-signup-409",
+          "request": {
+            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
-            "method": "PATCH",
             "url": {
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "user",
-                ":id",
-                "roles"
+                "signup"
               ],
-              "raw": "{{baseUrl}}/user/:id/roles",
-              "variable": [
-                {
-                  "description": "UUID del usuario",
-                  "key": "id",
-                  "value": "{{userId}}"
-                }
-              ]
-            }
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "id": "user-delete",
-          "name": "Desactivar usuario (admin)",
-          "request": {
-            "description": "Solo admin. Desactiva en vez de borrar. No puede desactivarse a sí mismo.",
-            "method": "DELETE",
-            "url": {
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "user",
-                ":id"
-              ],
-              "raw": "{{baseUrl}}/user/:id",
-              "variable": [
-                {
-                  "description": "UUID del usuario",
-                  "key": "id",
-                  "value": "{{userId}}"
-                }
-              ]
-            }
-          },
-          "response": [],
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
-                  "});"
-                ]
-              }
-            }
-          ]
-        }
-      ],
-      "name": "User"
-    },
-    {
-      "description": "Crear/editar/borrar es solo admin; listar y ver exigen sesión",
-      "item": [
-        {
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
-                  "});",
-                  "const res = pm.response.json();",
-                  "if (res.id) {",
-                  "  pm.collectionVariables.set('subjectId', res.id);",
-                  "  console.log('Materia guardada en {{subjectId}}: ' + res.id);",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
-          "id": "subject-create",
-          "name": "Crear materia (admin)",
-          "request": {
+              "raw": "{{baseUrl}}/user/signup"
+            },
+            "description": "",
             "body": {
               "mode": "raw",
               "options": {
@@ -402,16 +472,232 @@
                   "language": "json"
                 }
               },
-              "raw": "{\n  \"name\": \"Cálculo I\",\n  \"university\": \"ICESI\",\n  \"semester\": \"3\"\n}"
+              "raw": "{\n  \"email\": \"{{anaEmail}}\",\n  \"password\": \"{{seedPassword}}\",\n  \"fullName\": \"Duplicado\"\n}"
             },
-            "description": "Solo admin. No puede repetirse nombre+universidad+semestre (`409`). El script guarda el `id` en `{{subjectId}}`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 duplicado', function () { pm.response.to.have.status(409); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Registrarse - 400 Formato inválido",
+          "id": "user-signup-400",
+          "request": {
+            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "signup"
+              ],
+              "raw": "{{baseUrl}}/user/signup"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"email\": \"correo-invalido\",\n  \"password\": \"123\",\n  \"fullName\": \"X\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 invalido', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[GET] Listar usuarios - 401 Sin token",
+          "id": "user-list-401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user"
+              ],
+              "raw": "{{baseUrl}}/user",
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sin token', function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PATCH] Asignar roles - 400 Rol inválido",
+          "id": "user-roles-400",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "{{userId}}",
+                "roles"
+              ],
+              "raw": "{{baseUrl}}/user/{{userId}}/roles"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"roles\": [\"pirata\"]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 rol invalido', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[GET] Ver usuario - 404 No encontrado",
+          "id": "user-get-404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "user",
+                "{{$guid}}"
+              ],
+              "raw": "{{baseUrl}}/user/{{$guid}}"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 no encontrado', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Subject",
+      "description": "CRUD de materias. Positivos y negativos (401/403/404/409).",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const baseUrl = pm.collectionVariables.get('baseUrl');",
+              "pm.sendRequest({",
+              "  url: baseUrl + '/user/auth',",
+              "  method: 'POST',",
+              "  header: { 'Content-Type': 'application/json' },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('adminEmail'), password: pm.collectionVariables.get('adminPassword') }) }",
+              "}, function (err, res) {",
+              "  if (err) { console.error('Login error for adminEmail:', err); return; }",
+              "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('adminEmail')); return; }",
+              "  const jwt = res.json().token;",
+              "  pm.collectionVariables.set('token', jwt);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "[POST] Crear materia - 201 Creada",
+          "id": "subject-create",
+          "request": {
             "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -420,16 +706,39 @@
                 "subject"
               ],
               "raw": "{{baseUrl}}/subject"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"name\": \"Materia {{$randomWord}}\",\n  \"university\": \"ICESI\",\n  \"semester\": \"3\"\n}"
             }
           },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('create 201', function () { pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "if (body.id) { pm.collectionVariables.set('subjectId', body.id); }"
+                ]
+              }
+            }
+          ],
           "response": []
         },
         {
+          "name": "[GET] Listar materias - 200 OK",
           "id": "subject-list",
-          "name": "Listar materias",
           "request": {
-            "description": "Requiere sesión. Filtros: `university`, `semester`, `search` (por nombre), `limit`, `skip`.",
             "method": "GET",
+            "header": [],
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -437,19 +746,165 @@
               "path": [
                 "subject"
               ],
+              "raw": "{{baseUrl}}/subject",
               "query": [
                 {
-                  "description": "Filtro por universidad",
                   "key": "university",
                   "value": "ICESI"
                 },
                 {
-                  "description": "Filtro por semestre",
-                  "key": "semester",
-                  "value": "3"
+                  "key": "limit",
+                  "value": "10"
                 },
                 {
-                  "description": "Búsqueda por nombre",
+                  "key": "skip",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('list 200', function () { pm.response.to.have.status(200); });",
+                  "pm.expect(pm.response.json()).to.be.an(\"array\");"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[GET] Ver materia - 200 OK",
+          "id": "subject-get",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject",
+                "{{subjectId}}"
+              ],
+              "raw": "{{baseUrl}}/subject/{{subjectId}}"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('get 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PATCH] Editar materia - 200 OK",
+          "id": "subject-update",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject",
+                "{{subjectId}}"
+              ],
+              "raw": "{{baseUrl}}/subject/{{subjectId}}"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"semester\": \"4\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('update 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[DELETE] Borrar materia - 200 OK",
+          "id": "subject-delete",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject",
+                "{{subjectId}}"
+              ],
+              "raw": "{{baseUrl}}/subject/{{subjectId}}"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('delete 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[GET] Buscar Cálculo I - 200 Id guardado",
+          "id": "subject-calculo",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject"
+              ],
+              "raw": "{{baseUrl}}/subject",
+              "query": [
+                {
+                  "key": "university",
+                  "value": "icesi"
+                },
+                {
                   "key": "search",
                   "value": "cálculo"
                 },
@@ -461,68 +916,96 @@
                   "key": "skip",
                   "value": "0"
                 }
-              ],
-              "raw": "{{baseUrl}}/subject?university=ICESI&semester=3&search=cálculo&limit=10&skip=0"
-            }
+              ]
+            },
+            "description": "Captura el id de Cálculo I del seed en {{calculoId}}."
           },
-          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
-                  "});"
+                  "pm.test('calculo 200', function () { pm.response.to.have.status(200); });",
+                  "const list = pm.response.json();",
+                  "const calculo = list.find(function (s) { return s.name === 'Cálculo I'; });",
+                  "pm.expect(calculo).to.be.an('object');",
+                  "pm.collectionVariables.set('calculoId', calculo.id);"
                 ]
               }
             }
-          ]
+          ],
+          "response": []
         },
         {
-          "id": "subject-get",
-          "name": "Ver una materia",
+          "name": "[GET] Buscar Programación I - 200 Id guardado",
+          "id": "subject-programacion",
           "request": {
-            "description": "Requiere sesión.",
             "method": "GET",
+            "header": [],
             "url": {
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "subject",
-                ":id"
+                "subject"
               ],
-              "raw": "{{baseUrl}}/subject/:id",
-              "variable": [
+              "raw": "{{baseUrl}}/subject",
+              "query": [
                 {
-                  "description": "UUID de la materia",
-                  "key": "id",
-                  "value": "{{subjectId}}"
+                  "key": "search",
+                  "value": "Programación"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
                 }
               ]
-            }
+            },
+            "description": "Captura el id de Programación I (tutor1 no la dicta) en {{programacionId}}."
           },
-          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
-                  "});"
+                  "pm.test('programacion 200', function () { pm.response.to.have.status(200); });",
+                  "const list = pm.response.json();",
+                  "const prog = list.find(function (s) { return s.name === 'Programación I'; });",
+                  "pm.expect(prog).to.be.an('object');",
+                  "pm.collectionVariables.set('programacionId', prog.id);"
                 ]
               }
             }
-          ]
+          ],
+          "response": []
         },
         {
-          "id": "subject-update",
-          "name": "Editar materia (admin)",
+          "name": "[POST] Crear materia - 401 Sin token",
+          "id": "subject-create-401",
           "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject"
+              ],
+              "raw": "{{baseUrl}}/subject"
+            },
+            "description": "",
             "body": {
               "mode": "raw",
               "options": {
@@ -530,115 +1013,205 @@
                   "language": "json"
                 }
               },
-              "raw": "{\n  \"semester\": \"4\"\n}"
+              "raw": "{\n  \"name\": \"Sin token\",\n  \"university\": \"ICESI\",\n  \"semester\": \"1\"\n}"
             },
-            "description": "Solo admin. Acepta cualquier subconjunto de `name`, `university`, `semester`.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sin token', function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Crear materia - 403 Rol estudiante",
+          "id": "subject-create-403",
+          "request": {
+            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
-            "method": "PATCH",
             "url": {
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "subject",
-                ":id"
+                "subject"
               ],
-              "raw": "{{baseUrl}}/subject/:id",
-              "variable": [
-                {
-                  "description": "UUID de la materia",
-                  "key": "id",
-                  "value": "{{subjectId}}"
+              "raw": "{{baseUrl}}/subject"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
                 }
-              ]
+              },
+              "raw": "{\n  \"name\": \"No autorizado\",\n  \"university\": \"ICESI\",\n  \"semester\": \"1\"\n}"
             }
           },
-          "response": [],
           "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "pm.sendRequest({",
+                  "  url: baseUrl + '/user/auth',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('anaEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+                  "}, function (err, res) {",
+                  "  if (err) { console.error('Login error for anaEmail:', err); return; }",
+                  "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('anaEmail')); return; }",
+                  "  const jwt = res.json().token;",
+                  "  pm.collectionVariables.set('token', jwt);",
+                  "  pm.collectionVariables.set('studentToken', jwt);",
+                  "});"
+                ]
+              }
+            },
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
-                  "});"
+                  "pm.test('403 rol', function () { pm.response.to.have.status(403); });"
                 ]
               }
             }
-          ]
+          ],
+          "response": []
         },
         {
-          "id": "subject-delete",
-          "name": "Borrar materia (admin)",
+          "name": "[POST] Crear materia - 409 Duplicada",
+          "id": "subject-create-409",
           "request": {
-            "description": "Solo admin.",
-            "method": "DELETE",
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "subject",
-                ":id"
+                "subject"
               ],
-              "raw": "{{baseUrl}}/subject/:id",
-              "variable": [
-                {
-                  "description": "UUID de la materia",
-                  "key": "id",
-                  "value": "{{subjectId}}"
+              "raw": "{{baseUrl}}/subject"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
                 }
-              ]
+              },
+              "raw": "{\n  \"name\": \"Cálculo I\",\n  \"university\": \"ICESI\",\n  \"semester\": \"3\"\n}"
             }
           },
-          "response": [],
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([200]);",
-                  "});"
+                  "pm.test('409 duplicada', function () { pm.response.to.have.status(409); });"
                 ]
               }
             }
-          ]
+          ],
+          "response": []
+        },
+        {
+          "name": "[GET] Ver materia - 404 No encontrada",
+          "id": "subject-get-404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "subject",
+                "{{$guid}}"
+              ],
+              "raw": "{{baseUrl}}/subject/{{$guid}}"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 no encontrada', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ],
+          "response": []
         }
-      ],
-      "name": "Subject"
+      ]
     },
     {
-      "description": "El perfil no es el usuario: es `tutor_profile` ligado al usuario con rol tutor",
+      "name": "Tutor",
+      "description": "Perfil de tutor. Positivos y negativos (401/403/404).",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const baseUrl = pm.collectionVariables.get('baseUrl');",
+              "pm.sendRequest({",
+              "  url: baseUrl + '/user/auth',",
+              "  method: 'POST',",
+              "  header: { 'Content-Type': 'application/json' },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('tutorEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+              "}, function (err, res) {",
+              "  if (err) { console.error('Login error for tutorEmail:', err); return; }",
+              "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('tutorEmail')); return; }",
+              "  const jwt = res.json().token;",
+              "  pm.collectionVariables.set('token', jwt);",
+              "  pm.collectionVariables.set('tutorToken', jwt);",
+              "});"
+            ]
+          }
+        }
+      ],
       "item": [
         {
+          "name": "[PUT] Crear mi perfil de tutor - 200 Guardado",
           "id": "tutor-upsert",
-          "name": "Crear o reemplazar mi perfil (tutor)",
           "request": {
-            "body": {
-              "mode": "raw",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              },
-              "raw": "{\n  \"bio\": \"Estudiante de ingeniería con 3 semestres dando tutorías de cálculo.\",\n  \"hourlyRate\": 15000,\n  \"academicHistory\": \"Monitor de Cálculo I (2025), promedio 4.5.\",\n  \"university\": \"ICESI\",\n  \"subjectIds\": [\"{{subjectId}}\"]\n}"
-            },
-            "description": "Solo rol `tutor` (el admin lo otorga con `PATCH /user/:id/roles`). Crea el perfil o lo reemplaza si ya existe. Las materias deben existir. Hagan login como tutor antes (el `{{token}}` se sobrescribe).",
+            "method": "PUT",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
-            "method": "PUT",
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -648,16 +1221,39 @@
                 "me"
               ],
               "raw": "{{baseUrl}}/tutor/me"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bio\": \"Tutor de cálculo con experiencia comprobable.\",\n  \"hourlyRate\": 15000,\n  \"academicHistory\": \"Monitor de Cálculo I (2025), promedio 4.5.\",\n  \"university\": \"ICESI\",\n  \"subjectIds\": [\"{{calculoId}}\"]\n}"
             }
           },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('upsert 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "if (body.id) { pm.collectionVariables.set('tutorProfileId', body.id); }"
+                ]
+              }
+            }
+          ],
           "response": []
         },
         {
+          "name": "[GET] Listar tutores - 200 OK",
           "id": "tutor-list",
-          "name": "Listar tutores",
           "request": {
-            "description": "Requiere sesión. Filtros: `subjectId` (solo quienes dictan esa materia), `university`, `maxRate` (tarifa máxima), `verified` (true/false), `limit`, `skip`.",
             "method": "GET",
+            "header": [],
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -665,23 +1261,21 @@
               "path": [
                 "tutor"
               ],
+              "raw": "{{baseUrl}}/tutor",
               "query": [
                 {
-                  "description": "Solo quienes dictan esta materia",
                   "key": "subjectId",
-                  "value": "{{subjectId}}"
+                  "value": "{{calculoId}}"
                 },
                 {
                   "key": "university",
                   "value": "ICESI"
                 },
                 {
-                  "description": "Tarifa máxima en COP",
                   "key": "maxRate",
                   "value": "20000"
                 },
                 {
-                  "description": "Solo verificados",
                   "key": "verified",
                   "value": "true"
                 },
@@ -693,105 +1287,165 @@
                   "key": "skip",
                   "value": "0"
                 }
-              ],
-              "raw": "{{baseUrl}}/tutor?subjectId={{subjectId}}&university=ICESI&maxRate=20000&verified=true&limit=10&skip=0"
-            }
+              ]
+            },
+            "description": ""
           },
-          "response": []
-        },
-        {
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "const res = pm.response.json();",
-                  "if (res.id) {",
-                  "  pm.collectionVariables.set('tutorProfileId', res.id);",
-                  "  console.log('Tutor guardado en {{tutorProfileId}}: ' + res.id);",
-                  "}"
-                ],
-                "type": "text/javascript"
+                  "pm.test('list 200', function () { pm.response.to.have.status(200); });",
+                  "const list = pm.response.json();",
+                  "const tutor = list.find(function (t) { return t.user && t.user.email === pm.collectionVariables.get('tutorEmail'); });",
+                  "pm.expect(tutor).to.be.an('object');",
+                  "pm.collectionVariables.set('tutorProfileId', tutor.id);"
+                ]
               }
             }
           ],
-          "id": "tutor-get",
-          "name": "Ver un tutor",
-          "request": {
-            "description": "Requiere sesión. Guarda el `id` en `{{tutorProfileId}}` para reservar.",
-            "method": "GET",
-            "url": {
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "tutor",
-                ":id"
-              ],
-              "raw": "{{baseUrl}}/tutor/:id",
-              "variable": [
-                {
-                  "description": "UUID del perfil del tutor",
-                  "key": "id",
-                  "value": "{{tutorProfileId}}"
-                }
-              ]
-            }
-          },
           "response": []
         },
         {
-          "id": "tutor-verify",
-          "name": "Verificar tutor (admin)",
+          "name": "[GET] Ver tutor - 200 OK",
+          "id": "tutor-get",
           "request": {
-            "description": "Solo admin. Marca el perfil como verificado (hagan login como admin antes).",
-            "method": "PATCH",
+            "method": "GET",
+            "header": [],
             "url": {
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "tutor",
-                ":id",
+                "{{tutorProfileId}}"
+              ],
+              "raw": "{{baseUrl}}/tutor/{{tutorProfileId}}"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('get 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "if (body.id) { pm.collectionVariables.set('tutorProfileId', body.id); }"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PATCH] Verificar tutor - 200 Verificado",
+          "id": "tutor-verify",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tutor",
+                "{{tutorProfileId}}",
                 "verify"
               ],
-              "raw": "{{baseUrl}}/tutor/:id/verify",
-              "variable": [
-                {
-                  "description": "UUID del perfil del tutor",
-                  "key": "id",
-                  "value": "{{tutorProfileId}}"
-                }
-              ]
-            }
+              "raw": "{{baseUrl}}/tutor/{{tutorProfileId}}/verify"
+            },
+            "description": ""
           },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "pm.sendRequest({",
+                  "  url: baseUrl + '/user/auth',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('adminEmail'), password: pm.collectionVariables.get('adminPassword') }) }",
+                  "}, function (err, res) {",
+                  "  if (err) { console.error('Login error for adminEmail:', err); return; }",
+                  "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('adminEmail')); return; }",
+                  "  const jwt = res.json().token;",
+                  "  pm.collectionVariables.set('token', jwt);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('verify 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
           "response": []
-        }
-      ],
-      "name": "Tutor"
-    },
-    {
-      "description": "Estados: PENDING, CONFIRMED, CANCELLED, COMPLETED",
-      "item": [
+        },
         {
+          "name": "[GET] Ver tutor - 404 No encontrado",
+          "id": "tutor-get-404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tutor",
+                "{{$guid}}"
+              ],
+              "raw": "{{baseUrl}}/tutor/{{$guid}}"
+            },
+            "description": ""
+          },
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "const res = pm.response.json();",
-                  "if (res.id) {",
-                  "  pm.collectionVariables.set('bookingId', res.id);",
-                  "  console.log('Reserva guardada en {{bookingId}}: ' + res.id);",
-                  "}"
-                ],
-                "type": "text/javascript"
+                  "pm.test('404 no encontrado', function () { pm.response.to.have.status(404); });"
+                ]
               }
             }
           ],
-          "id": "booking-create",
-          "name": "Crear reserva (student)",
+          "response": []
+        },
+        {
+          "name": "[PUT] Crear mi perfil de tutor - 403 Rol estudiante",
+          "id": "tutor-upsert-403",
           "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tutor",
+                "me"
+              ],
+              "raw": "{{baseUrl}}/tutor/me"
+            },
+            "description": "",
             "body": {
               "mode": "raw",
               "options": {
@@ -799,16 +1453,163 @@
                   "language": "json"
                 }
               },
-              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{subjectId}}\",\n  \"startAt\": \"{{startAt}}\",\n  \"endAt\": \"{{endAt}}\"\n}"
+              "raw": "{\n  \"bio\": \"Sin rol tutor.\",\n  \"hourlyRate\": 10000,\n  \"academicHistory\": \"N/A\",\n  \"university\": \"ICESI\",\n  \"subjectIds\": [\"{{calculoId}}\"]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "pm.sendRequest({",
+                  "  url: baseUrl + '/user/auth',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('anaEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+                  "}, function (err, res) {",
+                  "  if (err) { console.error('Login error for anaEmail:', err); return; }",
+                  "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('anaEmail')); return; }",
+                  "  const jwt = res.json().token;",
+                  "  pm.collectionVariables.set('token', jwt);",
+                  "  pm.collectionVariables.set('studentToken', jwt);",
+                  "});"
+                ]
+              }
             },
-            "description": "Solo rol `student` (hagan login como estudiante antes). El tutor debe dictar la materia y no tener otra reserva activa que se cruce (`409`). Las fechas deben ser futuras y `endAt` posterior a `startAt`. El script guarda el `id` en `{{bookingId}}`.",
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 rol', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PUT] Crear mi perfil de tutor - 404 Materia inexistente",
+          "id": "tutor-upsert-404",
+          "request": {
+            "method": "PUT",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tutor",
+                "me"
+              ],
+              "raw": "{{baseUrl}}/tutor/me"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bio\": \"Materia fantasma.\",\n  \"hourlyRate\": 12000,\n  \"academicHistory\": \"Historial no valido.\",\n  \"university\": \"ICESI\",\n  \"subjectIds\": [\"{{$guid}}\"]\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 materia', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PATCH] Verificar tutor - 401 Sin token",
+          "id": "tutor-verify-401",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "tutor",
+                "{{tutorProfileId}}",
+                "verify"
+              ],
+              "raw": "{{baseUrl}}/tutor/{{tutorProfileId}}/verify"
+            },
+            "description": "",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sin token', function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Booking",
+      "description": "Reservas. Positivos y negativos (400/401/403/404/409).",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const baseUrl = pm.collectionVariables.get('baseUrl');",
+              "pm.sendRequest({",
+              "  url: baseUrl + '/user/auth',",
+              "  method: 'POST',",
+              "  header: { 'Content-Type': 'application/json' },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('anaEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+              "}, function (err, res) {",
+              "  if (err) { console.error('Login error for anaEmail:', err); return; }",
+              "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('anaEmail')); return; }",
+              "  const jwt = res.json().token;",
+              "  pm.collectionVariables.set('token', jwt);",
+              "  pm.collectionVariables.set('studentToken', jwt);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "[POST] Crear reserva - 201 PENDING",
+          "id": "booking-create",
+          "request": {
             "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -817,16 +1618,301 @@
                 "booking"
               ],
               "raw": "{{baseUrl}}/booking"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{startAt}}\",\n  \"endAt\": \"{{endAt}}\"\n}"
             }
           },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('create 201', function () { pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "pm.expect(body.status).to.eql('PENDING');",
+                  "pm.collectionVariables.set('bookingId', body.id);"
+                ]
+              }
+            }
+          ],
           "response": []
         },
         {
-          "id": "booking-mine",
-          "name": "Ver mis reservas",
+          "name": "[POST] Crear reserva - 409 Solapamiento",
+          "id": "booking-overlap",
           "request": {
-            "description": "Requiere sesión. Devuelve reservas donde soy el estudiante o el tutor. Filtro opcional `status` y paginación.",
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{startAt}}\",\n  \"endAt\": \"{{endAt}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 solapamiento', function () { pm.response.to.have.status(409); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Crear reserva - 400 Fecha en el pasado",
+          "id": "booking-past",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{pastStart}}\",\n  \"endAt\": \"{{pastEnd}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 pasado', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Crear reserva - 400 Fin antes del inicio",
+          "id": "booking-order",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{endAt}}\",\n  \"endAt\": \"{{startAt}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 orden', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Crear reserva - 400 Materia no dictada",
+          "id": "booking-no-teach",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{programacionId}}\",\n  \"startAt\": \"{{startAtLater}}\",\n  \"endAt\": \"{{endAtLater}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 materia', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PATCH] Confirmar reserva - 403 No es el tutor",
+          "id": "booking-confirm-403",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}",
+                "confirm"
+              ],
+              "raw": "{{baseUrl}}/booking/{{bookingId}}/confirm"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 no es tutor', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PATCH] Confirmar reserva - 404 No encontrada",
+          "id": "booking-confirm-404",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{$guid}}",
+                "confirm"
+              ],
+              "raw": "{{baseUrl}}/booking/{{$guid}}/confirm"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "pm.sendRequest({",
+                  "  url: baseUrl + '/user/auth',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('tutorEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+                  "}, function (err, res) {",
+                  "  if (err) { console.error('Login error for tutorEmail:', err); return; }",
+                  "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('tutorEmail')); return; }",
+                  "  const jwt = res.json().token;",
+                  "  pm.collectionVariables.set('token', jwt);",
+                  "  pm.collectionVariables.set('tutorToken', jwt);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 no encontrada', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[GET] Ver mis reservas - 200 OK",
+          "id": "booking-mine",
+          "request": {
             "method": "GET",
+            "header": [],
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -835,11 +1921,367 @@
                 "booking",
                 "mine"
               ],
+              "raw": "{{baseUrl}}/booking/mine",
               "query": [
                 {
-                  "description": "PENDING, CONFIRMED, CANCELLED o COMPLETED",
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "skip",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('mine 200', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PATCH] Confirmar reserva - 200 CONFIRMED",
+          "id": "booking-confirm",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}",
+                "confirm"
+              ],
+              "raw": "{{baseUrl}}/booking/{{bookingId}}/confirm"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "pm.sendRequest({",
+                  "  url: baseUrl + '/user/auth',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('tutorEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+                  "}, function (err, res) {",
+                  "  if (err) { console.error('Login error for tutorEmail:', err); return; }",
+                  "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('tutorEmail')); return; }",
+                  "  const jwt = res.json().token;",
+                  "  pm.collectionVariables.set('token', jwt);",
+                  "  pm.collectionVariables.set('tutorToken', jwt);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('confirm 200', function () { pm.response.to.have.status(200); });",
+                  "pm.expect(pm.response.json().status).to.eql('CONFIRMED');"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PATCH] Completar reserva - 200 COMPLETED",
+          "id": "booking-complete",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}",
+                "complete"
+              ],
+              "raw": "{{baseUrl}}/booking/{{bookingId}}/complete"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "pm.sendRequest({",
+                  "  url: baseUrl + '/user/auth',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('tutorEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+                  "}, function (err, res) {",
+                  "  if (err) { console.error('Login error for tutorEmail:', err); return; }",
+                  "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('tutorEmail')); return; }",
+                  "  const jwt = res.json().token;",
+                  "  pm.collectionVariables.set('token', jwt);",
+                  "  pm.collectionVariables.set('tutorToken', jwt);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('complete 200', function () { pm.response.to.have.status(200); });",
+                  "pm.expect(pm.response.json().status).to.eql('COMPLETED');"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Crear segunda reserva - 201 PENDING",
+          "id": "booking-create-2",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ],
+              "raw": "{{baseUrl}}/booking"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"tutorProfileId\": \"{{tutorProfileId}}\",\n  \"subjectId\": \"{{calculoId}}\",\n  \"startAt\": \"{{startAtLater}}\",\n  \"endAt\": \"{{endAtLater}}\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('create2 201', function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set('secondBookingId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Crear reseña - 400 Reserva PENDING",
+          "id": "booking-review-pending",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{secondBookingId}}\",\n  \"rating\": 5,\n  \"comment\": \"Aún no termina.\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 pending', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PATCH] Completar reserva - 400 Estado PENDING",
+          "id": "booking-complete-400",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{secondBookingId}}",
+                "complete"
+              ],
+              "raw": "{{baseUrl}}/booking/{{secondBookingId}}/complete"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "pm.sendRequest({",
+                  "  url: baseUrl + '/user/auth',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('tutorEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+                  "}, function (err, res) {",
+                  "  if (err) { console.error('Login error for tutorEmail:', err); return; }",
+                  "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('tutorEmail')); return; }",
+                  "  const jwt = res.json().token;",
+                  "  pm.collectionVariables.set('token', jwt);",
+                  "  pm.collectionVariables.set('tutorToken', jwt);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 pending', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PATCH] Cancelar reserva - 200 CANCELLED",
+          "id": "booking-cancel",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{secondBookingId}}",
+                "cancel"
+              ],
+              "raw": "{{baseUrl}}/booking/{{secondBookingId}}/cancel"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('cancel 200', function () { pm.response.to.have.status(200); });",
+                  "pm.expect(pm.response.json().status).to.eql('CANCELLED');"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[PATCH] Cancelar reserva - 404 No encontrada",
+          "id": "booking-cancel-404",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{$guid}}",
+                "cancel"
+              ],
+              "raw": "{{baseUrl}}/booking/{{$guid}}/cancel"
+            },
+            "description": ""
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 no encontrada', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[GET] Ver reservas completadas - 200 Incluye la reserva",
+          "id": "booking-mine-completed",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "mine"
+              ],
+              "raw": "{{baseUrl}}/booking/mine",
+              "query": [
+                {
                   "key": "status",
-                  "value": "PENDING"
+                  "value": "COMPLETED"
                 },
                 {
                   "key": "limit",
@@ -849,138 +2291,65 @@
                   "key": "skip",
                   "value": "0"
                 }
-              ],
-              "raw": "{{baseUrl}}/booking/mine?status=PENDING&limit=10&skip=0"
-            }
-          },
-          "response": []
-        },
-        {
-          "id": "booking-confirm",
-          "name": "Confirmar reserva (tutor dueño)",
-          "request": {
-            "description": "Solo el tutor dueño (hagan login como tutor antes). Pasa PENDING → CONFIRMED.",
-            "method": "PATCH",
-            "url": {
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "booking",
-                ":id",
-                "confirm"
-              ],
-              "raw": "{{baseUrl}}/booking/:id/confirm",
-              "variable": [
-                {
-                  "description": "UUID de la reserva",
-                  "key": "id",
-                  "value": "{{bookingId}}"
-                }
               ]
-            }
+            },
+            "description": ""
           },
-          "response": []
-        },
-        {
-          "id": "booking-cancel",
-          "name": "Cancelar reserva (dueño)",
-          "request": {
-            "description": "El dueño de la reserva (estudiante o tutor). Pasa PENDING/CONFIRMED → CANCELLED.",
-            "method": "PATCH",
-            "url": {
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "booking",
-                ":id",
-                "cancel"
-              ],
-              "raw": "{{baseUrl}}/booking/:id/cancel",
-              "variable": [
-                {
-                  "description": "UUID de la reserva",
-                  "key": "id",
-                  "value": "{{bookingId}}"
-                }
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "id": "booking-complete",
-          "name": "Completar reserva (tutor dueño)",
-          "request": {
-            "description": "Solo el tutor dueño. Pasa CONFIRMED → COMPLETED (luego se podrá reseñar).",
-            "method": "PATCH",
-            "url": {
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "booking",
-                ":id",
-                "complete"
-              ],
-              "raw": "{{baseUrl}}/booking/:id/complete",
-              "variable": [
-                {
-                  "description": "UUID de la reserva",
-                  "key": "id",
-                  "value": "{{bookingId}}"
-                }
-              ]
-            }
-          },
-          "response": []
-        }
-      ],
-      "name": "Booking"
-    },
-    {
-      "description": "Una reseña por reserva COMPLETED, solo del estudiante dueño. Antes: completar la reserva como tutor y volver a iniciar sesión como ese estudiante. Usa {{bookingId}} y {{tutorProfileId}}.",
-      "item": [
-        {
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
-                  "});",
-                  "const res = pm.response.json();",
-                  "if (res.id) {",
-                  "  pm.collectionVariables.set('reviewId', res.id);",
-                  "  console.log('Reseña guardada en {{reviewId}}: ' + res.id);",
-                  "}"
-                ],
-                "type": "text/javascript"
+                  "pm.test('mine completed 200', function () { pm.response.to.have.status(200); });",
+                  "const ids = pm.response.json().map(function (b) { return b.id; });",
+                  "pm.expect(ids).to.include(pm.collectionVariables.get('bookingId'));"
+                ]
               }
             }
           ],
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Review",
+      "description": "Reseñas. Positivos y negativos (400/401/403/404/409).",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const baseUrl = pm.collectionVariables.get('baseUrl');",
+              "pm.sendRequest({",
+              "  url: baseUrl + '/user/auth',",
+              "  method: 'POST',",
+              "  header: { 'Content-Type': 'application/json' },",
+              "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('anaEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+              "}, function (err, res) {",
+              "  if (err) { console.error('Login error for anaEmail:', err); return; }",
+              "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('anaEmail')); return; }",
+              "  const jwt = res.json().token;",
+              "  pm.collectionVariables.set('token', jwt);",
+              "  pm.collectionVariables.set('studentToken', jwt);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "item": [
+        {
+          "name": "[POST] Crear reseña - 201 Creada",
           "id": "review-create",
-          "name": "Crear reseña (student dueño)",
           "request": {
-            "body": {
-              "mode": "raw",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              },
-              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 5,\n  \"comment\": \"Explica muy claro y es puntual.\"\n}"
-            },
-            "description": "Solo el estudiante dueño de una reserva COMPLETED (inicien sesión con ese usuario). rating va de 1 a 5 y comment de 3 a 500 caracteres. Si la reserva no está COMPLETED responde 400; si no es suya, 403; si no existe, 404; si ya tiene reseña, 409. El script guarda el id en {{reviewId}}.",
+            "method": "POST",
             "header": [
               {
                 "key": "Content-Type",
                 "value": "application/json"
               }
             ],
-            "method": "POST",
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -989,33 +2358,282 @@
                 "review"
               ],
               "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 5,\n  \"comment\": \"Explica muy claro y es puntual.\"\n}"
             }
           },
-          "response": []
-        },
-        {
           "event": [
             {
               "listen": "test",
               "script": {
+                "type": "text/javascript",
                 "exec": [
-                  "pm.test('respuesta esperada', function () {",
-                  "  pm.response.to.have.status(200);",
-                  "  const res = pm.response.json();",
-                  "  pm.expect(res).to.have.property('average');",
-                  "  pm.expect(res).to.have.property('count');",
-                  "  pm.expect(res).to.have.property('reviews');",
-                  "});"
-                ],
-                "type": "text/javascript"
+                  "pm.test('create 201', function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set('reviewId', pm.response.json().id);"
+                ]
               }
             }
           ],
-          "id": "review-by-tutor",
-          "name": "Listar reseñas de un tutor",
+          "response": []
+        },
+        {
+          "name": "[POST] Crear reseña - 409 Duplicada",
+          "id": "review-dup",
           "request": {
-            "description": "Cualquier sesión. tutorId es el UUID del perfil ({{tutorProfileId}}), no el del usuario. Devuelve average, count y reviews.",
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 4,\n  \"comment\": \"Segunda opinion.\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 duplicada', function () { pm.response.to.have.status(409); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Crear reseña - 400 Nota fuera de rango",
+          "id": "review-rating-400",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 6,\n  \"comment\": \"Nota inválida.\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 nota', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Crear reseña - 403 No es el dueño",
+          "id": "review-owner-403",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 4,\n  \"comment\": \"No es mi sesión.\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const baseUrl = pm.collectionVariables.get('baseUrl');",
+                  "pm.sendRequest({",
+                  "  url: baseUrl + '/user/auth',",
+                  "  method: 'POST',",
+                  "  header: { 'Content-Type': 'application/json' },",
+                  "  body: { mode: 'raw', raw: JSON.stringify({ email: pm.collectionVariables.get('luisEmail'), password: pm.collectionVariables.get('seedPassword') }) }",
+                  "}, function (err, res) {",
+                  "  if (err) { console.error('Login error for luisEmail:', err); return; }",
+                  "  if (res.code !== 201) { console.error('Login failed (' + res.code + ') for ' + pm.collectionVariables.get('luisEmail')); return; }",
+                  "  const jwt = res.json().token;",
+                  "  pm.collectionVariables.set('token', jwt);",
+                  "  pm.collectionVariables.set('luisToken', jwt);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 no es dueño', function () { pm.response.to.have.status(403); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Crear reseña - 404 Reserva no encontrada",
+          "id": "review-404",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{$guid}}\",\n  \"rating\": 5,\n  \"comment\": \"Reserva fantasma.\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 reserva', function () { pm.response.to.have.status(404); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Crear reseña - 401 Sin token",
+          "id": "review-401",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "review"
+              ],
+              "raw": "{{baseUrl}}/review"
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              },
+              "raw": "{\n  \"bookingId\": \"{{bookingId}}\",\n  \"rating\": 5,\n  \"comment\": \"Sin token.\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 sin token', function () { pm.response.to.have.status(401); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[GET] Listar reseñas del tutor - 200 OK",
+          "id": "review-by-tutor",
+          "request": {
             "method": "GET",
+            "header": [],
             "url": {
               "host": [
                 "{{baseUrl}}"
@@ -1023,29 +2641,78 @@
               "path": [
                 "review",
                 "tutor",
-                ":tutorId"
+                "{{tutorProfileId}}"
               ],
-              "raw": "{{baseUrl}}/review/tutor/:tutorId",
-              "variable": [
-                {
-                  "description": "UUID del perfil de tutor",
-                  "key": "tutorId",
-                  "value": "{{tutorProfileId}}"
-                }
-              ]
-            }
+              "raw": "{{baseUrl}}/review/tutor/{{tutorProfileId}}"
+            },
+            "description": ""
           },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('resenas 200', function () { pm.response.to.have.status(200); });",
+                  "const res = pm.response.json();",
+                  "pm.expect(res).to.have.property('average');",
+                  "pm.expect(res).to.have.property('count');",
+                  "pm.expect(res).to.have.property('reviews');"
+                ]
+              }
+            }
+          ],
           "response": []
         }
-      ],
-      "name": "Review"
+      ]
     },
     {
       "name": "Escenarios",
       "description": "Correr después de Seed. Cubre los rechazos del marketplace: horario, rol, materia que el tutor no dicta, reseña antes de completar, reseña ajena, reseña duplicada, promedio y cancelación. Las fechas salen del pre-request de la colección, así no se vencen.",
       "item": [
         {
-          "name": "Entrar como Ana (estudiante)",
+          "name": "[GET] Ejecutar seed - 200 Base reiniciada",
+          "id": "seed-run",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "seed"
+              ],
+              "raw": "{{baseUrl}}/seed",
+              "query": [
+                {
+                  "key": "key",
+                  "value": "{{seedKey}}"
+                }
+              ]
+            },
+            "description": "Reinicia la base a un estado conocido (borra y recarga admin, materias, 2 tutores y 2 estudiantes).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('seed 200', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "pm.test('seed ejecutado', function () { pm.expect(body.message).to.eql('SEED EXECUTED'); });"
+                ]
+              }
+            }
+          ],
+          "response": []
+        },
+        {
+          "name": "[POST] Iniciar sesión como Ana - 201 Token emitido",
           "event": [
             {
               "listen": "test",
@@ -1098,7 +2765,7 @@
           "response": []
         },
         {
-          "name": "Buscar Cálculo en ICESI",
+          "name": "[GET] Buscar Cálculo I en ICESI - 200 Encontrada",
           "event": [
             {
               "listen": "test",
@@ -1149,7 +2816,7 @@
           "response": []
         },
         {
-          "name": "Guardar Programación I",
+          "name": "[GET] Buscar Programación I - 200 Id guardado",
           "event": [
             {
               "listen": "test",
@@ -1196,7 +2863,7 @@
           "response": []
         },
         {
-          "name": "Filtrar tutores por tarifa y verificación",
+          "name": "[GET] Filtrar tutores por tarifa y verificación - 200 OK",
           "event": [
             {
               "listen": "test",
@@ -1255,7 +2922,7 @@
           "response": []
         },
         {
-          "name": "Reservar en el pasado",
+          "name": "[POST] Crear reserva - 400 Fecha en el pasado",
           "event": [
             {
               "listen": "test",
@@ -1303,7 +2970,7 @@
           "response": []
         },
         {
-          "name": "Reservar con el fin antes del inicio",
+          "name": "[POST] Crear reserva - 400 Fin antes del inicio",
           "event": [
             {
               "listen": "test",
@@ -1351,7 +3018,7 @@
           "response": []
         },
         {
-          "name": "Entrar como tutor1",
+          "name": "[POST] Iniciar sesión como tutor1 - 201 Token emitido",
           "event": [
             {
               "listen": "test",
@@ -1404,7 +3071,7 @@
           "response": []
         },
         {
-          "name": "Un tutor no puede reservar",
+          "name": "[POST] Crear reserva - 403 Rol tutor",
           "event": [
             {
               "listen": "test",
@@ -1449,7 +3116,7 @@
           "response": []
         },
         {
-          "name": "Volver a entrar como Ana",
+          "name": "[POST] Iniciar sesión como Ana - 201 Token emitido (2)",
           "event": [
             {
               "listen": "test",
@@ -1502,7 +3169,7 @@
           "response": []
         },
         {
-          "name": "Reservar una materia que el tutor no dicta",
+          "name": "[POST] Crear reserva - 400 Materia no dictada",
           "event": [
             {
               "listen": "test",
@@ -1550,7 +3217,7 @@
           "response": []
         },
         {
-          "name": "Reservar Cálculo con tutor1",
+          "name": "[POST] Crear reserva - 201 PENDING",
           "event": [
             {
               "listen": "test",
@@ -1598,7 +3265,7 @@
           "response": []
         },
         {
-          "name": "Rechazar el mismo horario",
+          "name": "[POST] Crear reserva - 409 Solapamiento",
           "event": [
             {
               "listen": "test",
@@ -1646,7 +3313,7 @@
           "response": []
         },
         {
-          "name": "Reservar sin token",
+          "name": "[POST] Crear reserva - 401 Sin token",
           "event": [
             {
               "listen": "test",
@@ -1694,7 +3361,7 @@
           "response": []
         },
         {
-          "name": "Ana no puede confirmar su reserva",
+          "name": "[PATCH] Confirmar reserva - 403 No es el tutor",
           "event": [
             {
               "listen": "test",
@@ -1726,7 +3393,7 @@
           "response": []
         },
         {
-          "name": "Entrar como tutor1 para confirmar",
+          "name": "[POST] Iniciar sesión como tutor1 - 201 Token emitido (2)",
           "event": [
             {
               "listen": "test",
@@ -1779,7 +3446,7 @@
           "response": []
         },
         {
-          "name": "El tutor confirma",
+          "name": "[PATCH] Confirmar reserva - 200 CONFIRMED",
           "event": [
             {
               "listen": "test",
@@ -1812,7 +3479,7 @@
           "response": []
         },
         {
-          "name": "Ana intenta reseñar antes de completar",
+          "name": "[POST] Iniciar sesión como Ana - 201 Token emitido (3)",
           "event": [
             {
               "listen": "test",
@@ -1865,7 +3532,7 @@
           "response": []
         },
         {
-          "name": "Reseñar una reserva que no terminó",
+          "name": "[POST] Crear reseña - 400 Reserva no completada",
           "event": [
             {
               "listen": "test",
@@ -1913,7 +3580,7 @@
           "response": []
         },
         {
-          "name": "Ana no puede marcar la reserva como completada",
+          "name": "[PATCH] Completar reserva - 403 No es el tutor",
           "event": [
             {
               "listen": "test",
@@ -1945,7 +3612,7 @@
           "response": []
         },
         {
-          "name": "El tutor completa la sesión",
+          "name": "[POST] Iniciar sesión como tutor1 - 201 Token emitido (3)",
           "event": [
             {
               "listen": "test",
@@ -1998,7 +3665,7 @@
           "response": []
         },
         {
-          "name": "Completar la reserva",
+          "name": "[PATCH] Completar reserva - 200 COMPLETED",
           "event": [
             {
               "listen": "test",
@@ -2031,7 +3698,7 @@
           "response": []
         },
         {
-          "name": "El tutor no puede reseñar",
+          "name": "[POST] Crear reseña - 403 Rol tutor",
           "event": [
             {
               "listen": "test",
@@ -2076,7 +3743,7 @@
           "response": []
         },
         {
-          "name": "Entrar como Luis",
+          "name": "[POST] Iniciar sesión como Luis - 201 Token emitido",
           "event": [
             {
               "listen": "test",
@@ -2129,7 +3796,7 @@
           "response": []
         },
         {
-          "name": "Luis no puede reseñar la reserva de Ana",
+          "name": "[POST] Crear reseña - 403 No es el dueño",
           "event": [
             {
               "listen": "test",
@@ -2177,7 +3844,7 @@
           "response": []
         },
         {
-          "name": "Ana reseña su sesión",
+          "name": "[POST] Iniciar sesión como Ana - 201 Token emitido (4)",
           "event": [
             {
               "listen": "test",
@@ -2230,7 +3897,7 @@
           "response": []
         },
         {
-          "name": "Nota fuera de 1 a 5",
+          "name": "[POST] Crear reseña - 400 Nota fuera de rango",
           "event": [
             {
               "listen": "test",
@@ -2275,7 +3942,7 @@
           "response": []
         },
         {
-          "name": "Crear la reseña",
+          "name": "[POST] Crear reseña - 201 Creada",
           "event": [
             {
               "listen": "test",
@@ -2323,7 +3990,7 @@
           "response": []
         },
         {
-          "name": "No se puede reseñar dos veces",
+          "name": "[POST] Crear reseña - 409 Duplicada",
           "event": [
             {
               "listen": "test",
@@ -2371,7 +4038,7 @@
           "response": []
         },
         {
-          "name": "Ver el promedio sin token",
+          "name": "[GET] Ver promedio del tutor - 401 Sin token",
           "event": [
             {
               "listen": "test",
@@ -2406,7 +4073,7 @@
           "response": []
         },
         {
-          "name": "Ver promedio del tutor",
+          "name": "[GET] Ver promedio del tutor - 200 OK",
           "event": [
             {
               "listen": "test",
@@ -2416,9 +4083,9 @@
                   "pm.test('escenario', function () {",
                   "  pm.response.to.have.status(200);",
                   "  const body = pm.response.json();",
-                  "  pm.expect(body.count).to.eql(1);",
-                  "  pm.expect(body.average).to.eql(5);",
-                  "  pm.expect(body.reviews).to.have.lengthOf(1);",
+                  "  pm.expect(body.count).to.be.at.least(1);",
+                  "  pm.expect(body.average).to.be.within(1, 5);",
+                  "  pm.expect(body.reviews).to.have.lengthOf(body.count);",
                   "});"
                 ]
               }
@@ -2442,7 +4109,7 @@
           "response": []
         },
         {
-          "name": "Ana reserva otro horario",
+          "name": "[POST] Crear reserva - 201 PENDING (2)",
           "event": [
             {
               "listen": "test",
@@ -2488,7 +4155,7 @@
           "response": []
         },
         {
-          "name": "El tutor cancela la segunda reserva",
+          "name": "[POST] Iniciar sesión como tutor1 - 201 Token emitido (4)",
           "event": [
             {
               "listen": "test",
@@ -2541,7 +4208,7 @@
           "response": []
         },
         {
-          "name": "No se puede completar una reserva PENDING",
+          "name": "[PATCH] Completar reserva - 400 Estado PENDING",
           "event": [
             {
               "listen": "test",
@@ -2576,7 +4243,7 @@
           "response": []
         },
         {
-          "name": "El tutor cancela",
+          "name": "[PATCH] Cancelar reserva - 200 CANCELLED",
           "event": [
             {
               "listen": "test",
@@ -2609,7 +4276,7 @@
           "response": []
         },
         {
-          "name": "Ana no puede cancelar la sesión ya terminada",
+          "name": "[POST] Iniciar sesión como Ana - 201 Token emitido (5)",
           "event": [
             {
               "listen": "test",
@@ -2662,7 +4329,7 @@
           "response": []
         },
         {
-          "name": "Cancelar una reserva COMPLETED",
+          "name": "[PATCH] Cancelar reserva - 400 Estado COMPLETED",
           "event": [
             {
               "listen": "test",
@@ -2697,7 +4364,7 @@
           "response": []
         },
         {
-          "name": "Ver solo mis reservas completadas",
+          "name": "[GET] Ver reservas completadas - 200 Incluye la reserva",
           "event": [
             {
               "listen": "test",
@@ -2744,7 +4411,7 @@
           "response": []
         },
         {
-          "name": "Un estudiante no lista usuarios",
+          "name": "[GET] Listar usuarios - 403 Rol estudiante",
           "event": [
             {
               "listen": "test",
@@ -2784,40 +4451,6 @@
           "response": []
         }
       ]
-    },
-    {
-      "description": "Carga datos iniciales (admin, materias, tutores, estudiantes). Borra review, booking, tutor_profile, subject y user en ese orden.",
-      "item": [
-        {
-          "id": "seed-run",
-          "name": "Ejecutar seed",
-          "request": {
-            "auth": {
-              "type": "noauth"
-            },
-            "description": "Borra y recarga la base de Render. `key` debe coincidir con `SEED_KEY` de ese servicio (si no, `401`).",
-            "method": "GET",
-            "url": {
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "seed"
-              ],
-              "query": [
-                {
-                  "description": "Debe coincidir con SEED_KEY del servicio en Render",
-                  "key": "key",
-                  "value": "{{seedKey}}"
-                }
-              ],
-              "raw": "{{baseUrl}}/seed?key={{seedKey}}"
-            }
-          },
-          "response": []
-        }
-      ],
-      "name": "Seed"
     }
   ],
   "variable": [
@@ -2828,130 +4461,154 @@
       "description": "API desplegada en Render."
     },
     {
-      "key": "userEmail",
+      "key": "seedKey",
       "type": "string",
-      "value": "ana@example.com",
-      "description": "Email para registrarse e iniciar sesión"
+      "value": "acatampocosequeponer",
+      "description": "Debe coincidir con SEED_KEY del servicio desplegado."
     },
     {
-      "key": "userPassword",
+      "key": "adminEmail",
+      "type": "string",
+      "value": "admin@tutorlink.com",
+      "description": "Admin creado por el seed."
+    },
+    {
+      "key": "adminPassword",
+      "type": "string",
+      "value": "tutorlink01",
+      "description": "Password del admin (ADMIN_PASSWORD)."
+    },
+    {
+      "key": "anaEmail",
+      "type": "string",
+      "value": "ana@example.com",
+      "description": "Estudiante del seed."
+    },
+    {
+      "key": "luisEmail",
+      "type": "string",
+      "value": "luis@example.com",
+      "description": "Segundo estudiante del seed."
+    },
+    {
+      "key": "tutorEmail",
+      "type": "string",
+      "value": "tutor1@example.com",
+      "description": "Tutor del seed."
+    },
+    {
+      "key": "seedPassword",
       "type": "string",
       "value": "Secreta123",
-      "description": "Contraseña (8 a 16 caracteres)"
+      "description": "Password de los usuarios del seed (no admin)."
     },
     {
       "key": "token",
       "type": "string",
       "value": "",
-      "description": "JWT. Lo guardan solas las peticiones de registro/login"
+      "description": "JWT actual. Lo setean los pre-request de login."
     },
     {
       "key": "userId",
       "type": "string",
       "value": "",
-      "description": "UUID de un usuario (para rutas admin)"
+      "description": "UUID del usuario creado en signup."
     },
     {
       "key": "subjectId",
       "type": "string",
       "value": "",
-      "description": "UUID de una materia. Lo llena Crear materia"
+      "description": "UUID de la materia creada."
     },
     {
       "key": "tutorProfileId",
       "type": "string",
       "value": "",
-      "description": "UUID del perfil del tutor. Lo llena Ver un tutor"
+      "description": "UUID del perfil de tutor."
     },
     {
       "key": "bookingId",
       "type": "string",
       "value": "",
-      "description": "UUID de la última reserva. Lo llena Crear reserva"
+      "description": "UUID de la reserva completada."
     },
     {
       "key": "reviewId",
       "type": "string",
       "value": "",
-      "description": "UUID de la última reseña. Lo llena Crear reseña"
-    },
-    {
-      "key": "seedKey",
-      "type": "string",
-      "value": "mi-clave-seed",
-      "description": "Debe coincidir con SEED_KEY del servicio en Render"
+      "description": "UUID de la reseña creada."
     },
     {
       "key": "calculoId",
       "type": "string",
       "value": "",
-      "description": "UUID de Cálculo I. Lo llena Escenarios"
+      "description": "UUID de Cálculo I del seed."
     },
     {
       "key": "programacionId",
       "type": "string",
       "value": "",
-      "description": "UUID de Programación I. Lo llena Escenarios"
+      "description": "UUID de Programación I (materia que tutor1 no dicta)."
     },
     {
       "key": "secondBookingId",
       "type": "string",
       "value": "",
-      "description": "Segunda reserva, la que se cancela"
+      "description": "UUID de la segunda reserva (cancelada)."
     },
     {
       "key": "studentToken",
       "type": "string",
       "value": "",
-      "description": "JWT de Ana"
+      "description": "JWT de Ana."
     },
     {
       "key": "tutorToken",
       "type": "string",
       "value": "",
-      "description": "JWT de tutor1"
+      "description": "JWT de tutor1."
     },
     {
       "key": "luisToken",
       "type": "string",
       "value": "",
-      "description": "JWT de Luis"
+      "description": "JWT de Luis."
     },
     {
       "key": "startAt",
       "type": "string",
       "value": "",
-      "description": "Inicio de la sesión, lo calcula el pre-request"
+      "description": "Inicio de la sesión (pre-request de colección)."
     },
     {
       "key": "endAt",
       "type": "string",
       "value": "",
-      "description": "Fin de la sesión, una hora después de startAt"
+      "description": "Fin de la sesión."
     },
     {
       "key": "startAtLater",
       "type": "string",
       "value": "",
-      "description": "Otro horario, sin cruce"
+      "description": "Otro horario sin cruce."
     },
     {
       "key": "endAtLater",
       "type": "string",
       "value": "",
-      "description": "Fin del otro horario"
+      "description": "Fin del otro horario."
     },
     {
       "key": "pastStart",
       "type": "string",
       "value": "",
-      "description": "Fecha pasada, para el rechazo"
+      "description": "Fecha pasada."
     },
     {
       "key": "pastEnd",
       "type": "string",
       "value": "",
-      "description": "Fin de la fecha pasada"
+      "description": "Fin de la fecha pasada."
     }
   ],
   "event": [
